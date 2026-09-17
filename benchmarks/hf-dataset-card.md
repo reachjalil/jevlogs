@@ -49,7 +49,7 @@ Package under test: **jevlogs@0.3.0** from git (`dist/` after `pnpm build`). npm
 
 \*Smoke “anomalous” here means the fixture’s `important` label, not Loghub.
 
-Canonical Gateway usage for the whole run (pilot + E1 + consistency + adversarial + smoke + E7 + E8): **6,841** Jev calls with usage, **3,665,677** input tokens, **526,757** output tokens, **$0.153958** estimated at the fetched Jev input price of $0.042 per million. Output is $0 on [the Jev model page](https://vercel.com/ai-gateway/models/jev).
+Canonical Gateway usage for the whole Jev E1–E8 run (pilot + E1 + consistency + adversarial + smoke + E7 + E8): **6,840** Jev calls with usage, **3,665,148** input tokens, **526,680** output tokens, **$0.153936** estimated at the fetched Jev input price of $0.042 per million. Output is $0 on [the Jev model page](https://vercel.com/ai-gateway/models/jev). A separate GPT-5.6 Luna structured-output job on the **same** Gateway key added **$0.081224** (652 calls).
 
 ![Recall vs routing rate](charts/recall_vs_routing_rate.png)
 
@@ -121,7 +121,26 @@ These are formula outputs, not invoices.
 
 ![Cost scenarios](charts/cost_scenarios.png)
 
+![Luna counterpart cost](charts/cost_luna_counterpart.png)
+
 ![Latency histogram](charts/latency_histogram.png)
+
+## GPT-5.6 Luna side-by-side (same Gateway key)
+
+`openai/gpt-5.6-luna` via Vercel AI Gateway (`generateObject` + JSON schema, ZDR). Same 400-line stratified slice / dataset, same retain rule, no OpenAI key. File: `e9_luna_metrics.json`.
+
+| | HDFS Luna | HDFS Jev (same 400) | BGL Luna | BGL Jev (same 400) |
+| --- | ---: | ---: | ---: | ---: |
+| Anomaly recall | 0.8333 | 0.9917 | 1.0000 | 1.0000 |
+| Retain rate | 0.1400 | 0.0100 | 0.0200 | 0.0075 |
+| Unavailable | 0 | 0 | 31 (all normal) | 0 |
+| Route agreement | 0.865 |  | 0.9725 |  |
+
+Luna is willing to score HDFS lines `value ≤ 25`; Jev’s scores sit just above 25, so the default rule barely retains. The 20 Luna HDFS “misses” are block-labeled `PacketResponder terminating` / `Deleting block` lines. Write-up: [`docs/article/jevlogs-vs-gpt56-luna.md`](https://github.com/reachjalil/jevlogs/blob/hf-benchmark/docs/article/jevlogs-vs-gpt56-luna.md).
+
+![Luna vs Jev recall](charts/luna_vs_jev_recall.png)
+
+![Luna vs Jev retain](charts/luna_vs_jev_retain.png)
 
 ## How it was produced
 
@@ -139,13 +158,15 @@ Re-run: `pnpm install --frozen-lockfile && pnpm build && export AI_GATEWAY_API_K
 | Path | Contents |
 | --- | --- |
 | `metrics.json` | All reported numbers |
-| `charts/*.png` | Recall vs routing rate, reason mix, latency histogram, cost scenarios |
+| `charts/*.png` | Recall vs routing rate, reason mix, latency, cost, Luna vs Jev |
 | `data/inputs_*.jsonl` | Sanitized evaluation inputs, hashes, source offsets |
 | `data/e1_*.jsonl` | Live decisions at `retainBelow=0.1`, cache off |
 | `data/e4_consistency.jsonl` | Paired re-runs |
 | `data/e5_adversarial.jsonl` | Clean vs injected |
 | `data/e7_*.jsonl` | Default cache on |
 | `data/e8_*.jsonl` | Cache plus retain rules |
+| `data/e9_luna_*.jsonl` | GPT-5.6 Luna structured-output decisions (Gateway) |
+| `e9_luna_metrics.json` | Luna vs Jev headline metrics |
 | `data/e7_*.stats.json` / `data/e8_*.stats.json` | `createJevLogs().stats()` snapshots |
 | `data/usage.jsonl` | Per-attempt token and latency log |
 | `LICENSE` | Loghub license notice |

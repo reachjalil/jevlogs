@@ -128,19 +128,35 @@ def metrics_tables():
                 "routing_rate_retain": routing.get("routing_rate_retain"),
             })
     spend = m.get("spend", {})
+    e9 = m.get("e9_luna_side_by_side") or {}
+    luna_rows = []
+    for ds in ("hdfs", "bgl"):
+        s = e9.get(ds) or {}
+        luna_rows.append({
+            "dataset": ds,
+            "n": s.get("n"),
+            "luna_anomaly_recall": s.get("luna_anomaly_recall"),
+            "jev_anomaly_recall": s.get("jev_anomaly_recall"),
+            "luna_routing_rate_retain": s.get("luna_routing_rate_retain"),
+            "jev_routing_rate_retain": s.get("jev_routing_rate_retain"),
+            "route_agreement": s.get("route_agreement_with_jev"),
+            "luna_unavailable_n": s.get("unavailable_n"),
+        })
+    luna_spend = (e9.get("spend") or {}).get("estimated_spend_usd")
     intro = (
         f"Package under test: `{m.get('package_under_test')}`. "
         f"Seed `{m.get('seed')}`. "
         f"Estimated Jev spend from logged tokens: ${spend.get('estimated_spend_usd', 'n/a')} "
         f"({spend.get('input_tokens', 'n/a')} input tokens, "
         f"{spend.get('jev_calls_with_usage', 'n/a')} calls with usage). "
-        "Confirm on the Vercel AI Gateway dashboard. "
+        + (f"Luna structured-output job on the same Gateway key: ${luna_spend}. " if luna_spend is not None else "")
+        + "Confirm on the Vercel AI Gateway dashboard. "
         "HDFS labels are block-level, not line-level. "
         "BGL labels are line-level alerts. "
         "The sample oversamples anomalies (~30%); it is not a production mix. "
         "Cache hit rate depends on how repetitive the workload is."
     )
-    return intro, pd.DataFrame(rows), pd.DataFrame(sweep_rows), pd.DataFrame(feat_rows)
+    return intro, pd.DataFrame(rows), pd.DataFrame(sweep_rows), pd.DataFrame(feat_rows), pd.DataFrame(luna_rows)
 
 
 def sweep_view(dataset: str, threshold: float):
@@ -176,8 +192,8 @@ def savings_view(
         "Estimate only, using the same formula as jevlogs.estimateSavings(). "
         "Downstream token counts are whatever you type here, not measured production usage. "
         f"Jev price source: https://vercel.com/ai-gateway/models/jev . "
+        f"GPT-5.6 Luna: https://vercel.com/ai-gateway/models/gpt-5.6-luna . "
         f"GPT-4.1: https://vercel.com/ai-gateway/models/gpt-4.1 . "
-        f"GPT-4.1 mini: https://vercel.com/ai-gateway/models/gpt-4.1-mini ."
     )
     return pd.DataFrame(rows), note
 
@@ -187,6 +203,7 @@ def build() -> gr.Blocks:
     spend = m.get("spend", {})
     prices = m.get("prices", {})
     jev_in = prices.get("jev", {}).get("input", 0.042)
+    luna = prices.get("luna", {"input": 0.2, "output": 1.2})
     gpt = prices.get("gpt41", {"input": 2, "output": 8})
     question = 0
     hdfs_e1 = m["e1_baseline"]["hdfs"]
@@ -214,10 +231,17 @@ Protected, unavailable, and missing-probability records stay `analyze`.
 - Site: [jevlogs.com](https://jevlogs.com)
             """
         )
-        intro, e1_table, sweep_table, feat_table = metrics_tables()
+        intro, e1_table, sweep_table, feat_table, luna_table = metrics_tables()
         gr.Markdown(intro)
         gr.Markdown("## E1 baseline (`retainBelow = 0.1`, cache off)")
         gr.Dataframe(value=e1_table, label="Headline metrics")
+        gr.Markdown("## GPT-5.6 Luna vs Jev (same 400-line slice, same Gateway key)")
+        gr.Markdown(
+            "Structured Luna (`generateObject`) vs Jev on the same sanitized lines. "
+            "BGL Luna `unavailable` rows are Gateway 503/abort, counted as analyze; all were label=normal. "
+            "HDFS Luna retain is higher because it scores `value ≤ 25`; Jev sits just above 25."
+        )
+        gr.Dataframe(value=luna_table, label="Luna vs Jev")
         gr.Markdown("## E2 saved threshold sweep")
         gr.Dataframe(value=sweep_table, label="Recall vs routing rate from saved probabilities")
         gr.Markdown("## E7 cache and E8 retain rules")
@@ -257,8 +281,8 @@ Protected, unavailable, and missing-probability records stay `analyze`.
             tokens_per_log = gr.Number(value=300, label="Downstream input tokens / log")
             output_tokens = gr.Number(value=50, label="Downstream output tokens / log")
         with gr.Row():
-            llm_in = gr.Number(value=float(gpt.get("input", 2)), label="Downstream $/M input")
-            llm_out = gr.Number(value=float(gpt.get("output", 8)), label="Downstream $/M output")
+            llm_in = gr.Number(value=float(luna.get("input", 0.2)), label="Downstream $/M input (default: GPT-5.6 Luna)")
+            llm_out = gr.Number(value=float(luna.get("output", 1.2)), label="Downstream $/M output (default: GPT-5.6 Luna)")
             analyze_rate = gr.Slider(0, 1, value=analyze_default, step=0.01, label="Analyze fraction (retainedFraction)")
         with gr.Row():
             jev_price = gr.Number(value=float(jev_in), label="Jev $/M input")
@@ -276,7 +300,8 @@ Protected, unavailable, and missing-probability records stay `analyze`.
 ## Spend recorded in this benchmark
 
 Estimated from logged Jev input tokens: **${spend.get("estimated_spend_usd")}**.
-Jalil should confirm this against the Gateway dashboard. Output tokens were recorded as usage but Jev output is priced at $0 on the model page.
+GPT-5.6 Luna structured-output job (same Gateway key): **${(m.get("e9_luna_side_by_side") or {}).get("spend", {}).get("estimated_spend_usd")}**.
+Jalil should confirm both against the Gateway dashboard. Jev output is priced at $0 on the model page.
 
 Upstream logs: Loghub HDFS_v1 and BGL, research/academic license with required citation.
             """

@@ -19,26 +19,26 @@
     {
       "retainBelow": 0.2,
       "n": 2500,
-      "anomaly_recall": 0.9213333333333333,
-      "routing_rate_retain": 0.1056,
-      "precision_retain": 0.7765151515151515,
-      "analyze_rate": 0.8944
+      "anomaly_recall": 0.9186666666666666,
+      "routing_rate_retain": 0.106,
+      "precision_retain": 0.769811320754717,
+      "analyze_rate": 0.894
     },
     {
       "retainBelow": 0.3,
       "n": 2500,
-      "anomaly_recall": 0.9213333333333333,
-      "routing_rate_retain": 0.1056,
-      "precision_retain": 0.7765151515151515,
-      "analyze_rate": 0.8944
+      "anomaly_recall": 0.9186666666666666,
+      "routing_rate_retain": 0.106,
+      "precision_retain": 0.769811320754717,
+      "analyze_rate": 0.894
     },
     {
       "retainBelow": 0.5,
       "n": 2500,
-      "anomaly_recall": 0.9213333333333333,
-      "routing_rate_retain": 0.1056,
-      "precision_retain": 0.7765151515151515,
-      "analyze_rate": 0.8944
+      "anomaly_recall": 0.9186666666666666,
+      "routing_rate_retain": 0.106,
+      "precision_retain": 0.769811320754717,
+      "analyze_rate": 0.894
     }
   ],
   "bgl": [
@@ -62,25 +62,25 @@
       "retainBelow": 0.2,
       "n": 2500,
       "anomaly_recall": 1,
-      "routing_rate_retain": 0.006,
+      "routing_rate_retain": 0.0068,
       "precision_retain": 1,
-      "analyze_rate": 0.994
+      "analyze_rate": 0.9932
     },
     {
       "retainBelow": 0.3,
       "n": 2500,
       "anomaly_recall": 1,
-      "routing_rate_retain": 0.0112,
+      "routing_rate_retain": 0.0116,
       "precision_retain": 1,
-      "analyze_rate": 0.9888
+      "analyze_rate": 0.9884
     },
     {
       "retainBelow": 0.5,
       "n": 2500,
       "anomaly_recall": 1,
-      "routing_rate_retain": 0.0208,
+      "routing_rate_retain": 0.0196,
       "precision_retain": 1,
-      "analyze_rate": 0.9792
+      "analyze_rate": 0.9804
     }
   ]
 }

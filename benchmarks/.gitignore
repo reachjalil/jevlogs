@@ -3,6 +3,7 @@ node_modules/
 results/.work/
 results/*.jsonl
 results/usage.jsonl
+pager/results/*.jsonl
 .publish/
 .venv/
 __pycache__/

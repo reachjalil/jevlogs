@@ -1,17 +1,17 @@
 {
-  "decisions": 2506,
+  "decisions": 2518,
   "model": 1095,
   "cached": 300,
   "protected": 1011,
   "rules": 94,
-  "unavailable": 6,
+  "unavailable": 18,
   "retain": 97,
-  "analyze": 2409,
+  "analyze": 2421,
   "inputTokens": 582831,
   "modelLatencyMs": {
     "count": 1095,
-    "total": 1128700.0013830015,
-    "max": 1950.9201250000042
+    "total": 1104510.7650410002,
+    "max": 1986.379208000144
   },
   "cacheEntries": 1000
 }

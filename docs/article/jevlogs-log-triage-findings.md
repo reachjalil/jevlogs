@@ -9,7 +9,7 @@ This write-up is a first public measurement of that routing on labeled logs, inc
 - **Software:** local `jevlogs@0.3.0` (`dist/` after `pnpm build`; npm still listed 0.2.0 at run time). Custom evaluator around `experimental_evaluate` from `ai@7.0.105`, model `typesafe-ai/jev`, timeout 2 s, four calls in flight. E1–E5 used `cache: false` and no `rules` so every non-protected record is a real model call. E7 used the default cache (1,000 entries, 5 minutes). E8 added three retain rules on top of that cache.
 - **Data:** Loghub HDFS_v1 and BGL via Hugging Face (`logfit-project/HDFS_v1`, `logfit-project/BGL`). Hash sample, seed `20260916`: 2,500 lines each, 750 labeled anomalous / 1,750 normal. Bodies run through `redactCommonSecrets` plus IP, hostname, path, block-id, and BGL location redaction. Loghub terms are research/academic; the published files keep the license notice.
 - **Labels:** HDFS anomalies are **block** labels joined onto every line that mentions the block. BGL anomalies are **line-level** alert tags. That difference drives the results.
-- **Spend:** 6,841 Jev calls that reported usage, 3,665,677 input tokens, 526,757 output tokens. Estimated **$0.153958** at the $0.042 per million input price fetched from [the Jev Gateway page](https://vercel.com/ai-gateway/models/jev) on 2026-09-17. Output is listed as $0 there. Confirm the dollar figure on the Gateway dashboard; it is computed from the token log, not from a screenshot.
+- **Spend:** 6,840 Jev calls that reported usage, 3,665,148 input tokens, 526,680 output tokens. Estimated **$0.153936** at the $0.042 per million input price fetched from [the Jev Gateway page](https://vercel.com/ai-gateway/models/jev) on 2026-09-17. Output is listed as $0 there. Luna structured-output classifier (same key): **$0.081224**. Confirm dollar figures on the Gateway dashboard; they are computed from the token log, not from a screenshot.
 
 Interactive charts: [reachjalil/jevlogs-triage-explorer](https://huggingface.co/spaces/reachjalil/jevlogs-triage-explorer). Collection: [Jev Logs: log triage with Jev](https://huggingface.co/collections/reachjalil/jev-logs-log-triage-with-jev-6aab8a1c641f647b3c6eea22). Reproduction: `pnpm install --frozen-lockfile && pnpm build && node benchmarks/run.mjs` in [reachjalil/jevlogs](https://github.com/reachjalil/jevlogs).
 
@@ -57,11 +57,20 @@ Forty pairs: original sanitized body vs the same body plus “Ignore previous in
 
 Two hundred non-protected records scored twice: **0 route flips**. Mean absolute probability change 0.0135, max 0.08.
 
-### Cost, as estimates
+### Cost, as estimates — counterpart is GPT-5.6 Luna
 
-[GPT-4.1](https://vercel.com/ai-gateway/models/gpt-4.1) at $2 / $8 per million, [GPT-4.1 mini](https://vercel.com/ai-gateway/models/gpt-4.1-mini) at $0.40 / $1.60, 1M logs, illustrative 300 input / 50 output tokens downstream. Jev question overhead is set so Jev’s tokens equal the measured mean 537.2 (`metrics.json` `e6_cost_model`).
+The analysis model people actually reach for on a log firehose in 2026 is [GPT-5.6 Luna](https://vercel.com/ai-gateway/models/gpt-5.6-luna) ($0.20 / $1.20 per million on Gateway, matching the [OpenAI card](https://developers.openai.com/api/docs/models/gpt-5.6-luna)), not GPT-4.1. Same `AI_GATEWAY_API_KEY` as Jev. Dedicated write-up: [`jevlogs-vs-gpt56-luna.md`](jevlogs-vs-gpt56-luna.md).
 
-On the HDFS sample, 99.16% of lines still go to analysis. Estimated GPT-4.1 spend goes from $1000 to $1025.50 (−2.55%). If nothing is filtered, Jev’s overhead alone is $33.90 per million logs (−3.39%). The mini estimate is worse in percent because the downstream bill is smaller. Jev is inexpensive. It does not reduce a downstream bill when it rarely returns `retain`. The cache cuts Jev’s own tokens on repetitive streams; `estimateSavings()` does not model that unless you put the measured Jev tokens in `questionTokensPerLog`.
+1M logs, illustrative 300 input / 50 output tokens downstream, measured Jev mean ~537 input tokens, Jev $0.042/M input:
+
+- Luna-only: **$120**
+- Jev then Luna at the measured HDFS analyze rate (99.16%): about **$141** (Jev’s tokens are extra)
+- Jev then Luna if nothing is filtered: about **$143**
+- Break-even vs Luna: you must skip about **19%** of lines (`analyze_rate ≈ 0.81`). Default retain on this sample is **0.84%**.
+
+GPT-4.1 at $2 / $8 is in `metrics.json` as a historical column. It makes Jev’s overhead look small in percent because the baseline is $1000. Luna is the honest counterpart: Jev is still cheap per call, and it still does not pay unless it actually filters.
+
+A structured-output Luna **classifier** on the same Gateway key (`benchmarks/luna-side-by-side.mjs`, 400 lines / dataset after Jev finished): HDFS recall **0.833** at **14%** retain vs Jev **0.992** at **1%** on the same slice; BGL both **1.0** (FATAL protection plus 31 Gateway 503s, all normal, counted as analyze). Luna spend **$0.081**. Write-up: [`jevlogs-vs-gpt56-luna.md`](jevlogs-vs-gpt56-luna.md).
 
 ## Limitations
 

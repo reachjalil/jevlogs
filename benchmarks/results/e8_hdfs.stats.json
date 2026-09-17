@@ -10,8 +10,8 @@
   "inputTokens": 46408,
   "modelLatencyMs": {
     "count": 85,
-    "total": 86219.96850200003,
-    "max": 1832.6648750000168
+    "total": 81740.60871000052,
+    "max": 1490.4725420000032
   },
   "cacheEntries": 85
 }
