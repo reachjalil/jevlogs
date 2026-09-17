@@ -3,9 +3,35 @@ layout: ../layouts/Guide.astro
 ---
 # What you can do with Jev Logs
 
-Jev Logs is a small decision layer before expensive LLM log analysis. Use it from a terminal, in a TypeScript job, or inside your existing Node.js OpenTelemetry Logs pipeline. It assigns diagnostic value, urgency, and an analysis recommendation. Your existing system remains responsible for storing logs, delivering events, and running deeper analysis.
+Jev Logs is a small decision layer. Use it to decide whether a log deserves **deeper LLM analysis**, or whether a human should be **paged right now**.
 
-**Current release: 0.2.0, public preview.** The SDK and CLI are on npm. The default demo is offline; live evaluation needs `AI_GATEWAY_API_KEY` and Jev access through Vercel AI Gateway. Production accuracy and savings have not been independently validated for this project.
+**Current release: 0.4.0, public preview.**
+
+## Page a human (PagerDuty-style)
+
+```ts
+import { createJevPager } from 'jevlogs';
+
+const pager = createJevPager({ pageAbove: 0.5 });
+const decision = await pager.decide({
+  body: 'Replica lag 47m on primary still accepting writes',
+  severityText: 'INFO',
+});
+if (decision.page) {
+  // notify on-call
+}
+```
+
+```sh
+npx jevlogs --page
+npx jevlogs --live --page --sample
+```
+
+One boolean. Fire on `probability >= 0.50`. ERROR is not a page. INFO is not a veto. Do not branch on a discrete urgency label.
+
+---
+
+Jev Logs is a small decision layer before expensive LLM log analysis. Use it from a terminal, in a TypeScript job, or inside your existing Node.js OpenTelemetry Logs pipeline. It assigns diagnostic value, urgency, and an analysis recommendation. Your existing system remains responsible for storing logs, delivering events, and running deeper analysis.
 
 ## Start a local OpenTelemetry receiver with one config
 

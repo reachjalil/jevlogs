@@ -8,6 +8,9 @@ test('default npx experience is labeled offline and routes demo samples',()=>{
 test('JSON mode emits parseable decisions only, without raw log bodies',()=>{
  const r=run(['--demo','--json']);assert.equal(r.status,0);const rows=r.stdout.trim().split('\n').map(JSON.parse);assert.equal(rows.length,4);assert.equal(rows[0].mode,'demo');assert.equal(rows[0].route,'retain');assert.equal(rows[2].reason,'protected');assert.ok(rows.every(r=>!('body' in r)));
 });
+test('offline --page demo scores ERROR instead of protecting it',()=>{
+ const r=run(['--page','--json']);assert.equal(r.status,0);const rows=r.stdout.trim().split('\n').map(JSON.parse);assert.equal(rows.length,4);assert.equal(rows[0].page,false);assert.equal(rows[1].page,false);assert.equal(rows[2].page,true);assert.equal(rows[3].page,true);assert.ok(rows.every(row=>row.reason==='model'));
+});
 test('live mode requires credentials and never silently runs fixtures',()=>{
  const r=run(['--live','--json']);assert.equal(r.status,1);assert.match(r.stderr,/AI_GATEWAY_API_KEY/);assert.equal(r.stdout,'');
 });

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 — 2026-09-17
+
+Jev Logs can page on-call, not only skip LLM analysis.
+
+- **`createJevPager()`.** One boolean (`page_now`). Your code fires when `probability >= pageAbove` (default 0.50). Discrete urgency is not used. INFO is not a veto. ERROR is not an auto-page.
+- **Unavailable calls do not page** unless `pageWhenUnavailable: true` (a 503 must not wake people).
+- **`JevPagerExporter`** annotates `jev.page` / `jev.page_probability`. `mode: "pages-only"` forwards only pages.
+- **CLI `--page`** and config `intent: "page"` with `pageAbove`. Offline demo includes an INFO replica-lag page and an ERROR coupon hold.
+- **`shouldPage(probability, pageAbove)`** for the same cut on stored scores.
+
+Triage (`createJevLogs`) is unchanged: ERROR/FATAL still skip the model and stay eligible for analysis.
+
 ## 0.3.0 — 2026-09-16
 
 The receiver becomes a usable pipeline stage instead of a printer.

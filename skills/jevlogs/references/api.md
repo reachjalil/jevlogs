@@ -1,4 +1,4 @@
-# jevlogs API reference (verified against jevlogs 0.3.0)
+# jevlogs API reference (verified against jevlogs 0.4.0)
 
 Source of truth: `src/index.ts`, `src/server.ts`, `src/config.ts`, `src/cli.ts` in
 https://github.com/reachjalil/jevlogs. If this file and the code disagree, the code wins.
@@ -7,7 +7,7 @@ https://github.com/reachjalil/jevlogs. If this file and the code disagree, the c
 
 | Import | Exports |
 | --- | --- |
-| `jevlogs` | `createJevLogs`, `compileRules`, `decisionAttributes`, `JevLogExporter`, `estimateSavings`, `redactCommonSecrets`, types `LogInput`, `Decision`, `Evaluation`, `Evaluator`, `Rule`, `CacheOptions`, `JevOptions`, `ExporterOptions`, `CostInputs`, `JevStats` |
+| `jevlogs` | `createJevLogs`, `createJevPager`, `compileRules`, `compilePagerRules`, `decisionAttributes`, `pageAttributes`, `scoringAttributes`, `shouldPage`, `isPageDecision`, `JevLogExporter`, `JevPagerExporter`, `estimateSavings`, `redactCommonSecrets`, `PAGE_NOW_INSTRUCTIONS`, types `LogInput`, `Decision`, `PageDecision`, `Evaluation`, `PagerEvaluation`, `Evaluator`, `PagerEvaluator`, `Rule`, `PagerRule`, `CacheOptions`, `JevOptions`, `PagerOptions`, `ExporterOptions`, `PagerExporterOptions`, `CostInputs`, `JevStats`, `PagerStats` |
 | `jevlogs/server` | `startJevLogsServer`, `parseOtlpHeaders`, `loadJevConfig`, types `JevServerOptions`, `JevLogEvent`, `JevConfig`, `JevServerStats` |
 | `npx jevlogs` | CLI (`dist/cli.js`) |
 
@@ -41,7 +41,7 @@ interface Evaluation {
 Out-of-range options throw `RangeError` at construction. Returns `{ triage(log: LogInput): Promise<Decision>, stats(): JevStats & { cacheEntries: number } }`.
 
 ```ts
-interface LogInput { body: unknown; severityNumber?: number; severityText?: string; protected?: boolean }
+interface LogInput { body: unknown; severityNumber?: number; severityText?: string; protected?: boolean; service?: string }
 interface Decision {
   value: number;                       // 0–100 rubric score
   priority: 'critical'|'high'|'normal'|'low';
@@ -75,6 +75,44 @@ interface JevStats {
 10. If the answer included a finite `inputTokens`, add it to `stats().inputTokens`. Record latency on successful model calls. Store the decision in the cache when caching is on.
 
 The `unavailable` fallback is `{ value: 100, priority: 'high', route: 'analyze', actionableProbability: null, reason: 'unavailable', cached: false }`. Provider error details are not exposed. There are no automatic retries (`maxRetries: 0` is passed to the AI SDK).
+
+### `createJevPager(options?)`
+
+```ts
+interface PagerOptions {
+  pageAbove?: number;      // default 0.5; 0–1
+  timeoutMs?: number;      // default 8000
+  maxInputChars?: number;  // default 8000
+  redact?: (text: string) => string;
+  evaluator?: PagerEvaluator;
+  rules?: PagerRule[];     // route: 'page' | 'hold'
+  cache?: CacheOptions | false;
+  pageWhenUnavailable?: boolean; // default false
+}
+interface PageDecision {
+  page: boolean;
+  probability: number | null;
+  pageAbove: number;
+  reason: 'model' | 'rule' | 'unavailable';
+  cached: boolean;
+  rule?: string;
+}
+```
+
+Returns `{ decide(log): Promise<PageDecision>, stats() }`.
+
+Algorithm:
+
+1. No ERROR/FATAL protection. Severity is just another field.
+2. Serialize `{ service, body, severityText, severityNumber }`, redact, size-check.
+3. Pager rules on redacted body. First match wins (`page` or `hold`).
+4. Cache / in-flight coalescing as in triage. Failures are not cached.
+5. One boolean `page_now`. `page = probability >= pageAbove`.
+6. On timeout, throw, or bad probability: `page: false` unless `pageWhenUnavailable`.
+
+`shouldPage(p, pageAbove)` is the same inequality for stored scores. `pageAttributes(decision)` writes `jev.page`, `jev.page_probability`, `jev.page_above`, `jev.reason`, optional `jev.cached` / `jev.rule`.
+
+`JevPagerExporter` mirrors `JevLogExporter` with `mode: 'annotate' | 'pages-only'`.
 
 ### `compileRules(rules)`
 
@@ -182,6 +220,8 @@ Reads JSON only (never executes code). Default path `./jevlogs.config.json`; a m
 | `rules` | array | compiled with `compileRules` |
 | `cacheSize` | number | `0` disables the cache; otherwise `cache.maxEntries` |
 | `cacheTtlMs` | number | `cache.ttlMs` |
+| `intent` | string | `triage` or `page` |
+| `pageAbove` | number | pager threshold, 0–1 |
 
 Unknown keys throw. There is no key for the API key; it must come from the environment or `envFile`.
 
@@ -189,6 +229,9 @@ Unknown keys throw. There is no key for the API key; it must come from the envir
 
 ```text
 npx jevlogs                         offline demo, fixed answers, no network, no key
+npx jevlogs --page                  offline pager demo (ERROR coupon holds; INFO lag pages)
+npx jevlogs --live --page --sample
+npx jevlogs --live --page --file <path>
 npx jevlogs --live                  local OTLP HTTP/JSON receiver on 127.0.0.1:4318, runs until Ctrl+C
 npx jevlogs --live --sample         4 built-in samples through real Jev, then exit
 npx jevlogs --live --file <path>    text or JSONL file, finite batch

@@ -1,8 +1,35 @@
 # What you can do with Jev Logs
 
-Jev Logs is a small decision layer before expensive LLM log analysis. Use it from a terminal, in a TypeScript job, or inside your existing Node.js OpenTelemetry Logs pipeline. It assigns diagnostic value, urgency, and an analysis recommendation. Your existing system remains responsible for storing logs, delivering events, and running deeper analysis.
+Jev Logs is a small decision layer. Use it to decide whether a log deserves **deeper LLM analysis**, or whether a human should be **paged right now**. Your existing system remains responsible for storing logs, delivering events, and running deeper analysis.
 
-**Current release: 0.3.0, public preview.** The SDK and CLI are on npm. The default demo is offline; live evaluation needs `AI_GATEWAY_API_KEY` and Jev access through Vercel AI Gateway. Production accuracy and savings have not been independently validated for this project.
+**Current release: 0.4.0, public preview.** The SDK and CLI are on npm. The default demo is offline; live evaluation needs `AI_GATEWAY_API_KEY` and Jev access through Vercel AI Gateway. Production accuracy and savings have not been independently validated for this project.
+
+## Page a human (PagerDuty-style)
+
+Triage asks “is this worth an LLM?” The pager asks “must a person act in minutes?” Those are different jobs. On a labeled checkout stream, Jev hit 100% recall and precision when we asked **one boolean** and fired on `page_now.probability >= 0.50`. Loosening the prompt and paging on discrete `urgency==page` false-paged successful deploys. ERROR is not a page. INFO is not a veto.
+
+```ts
+import { createJevPager } from 'jevlogs';
+
+const pager = createJevPager({ pageAbove: 0.5 });
+const decision = await pager.decide({
+  body: 'Replica lag 47m on primary still accepting writes',
+  severityText: 'INFO',
+  service: 'orders-db',
+});
+if (decision.page) {
+  // notify on-call
+}
+```
+
+```sh
+npx jevlogs --page                  # offline demo
+npx jevlogs --live --page --sample  # real Jev
+```
+
+Config for the receiver: `"intent": "page", "pageAbove": 0.5`. Annotated records get `jev.page` and `jev.page_probability`. A timeout or provider failure **does not page** unless `pageWhenUnavailable` is true.
+
+Dataset: [reachjalil/jev-luna-pagerduty-trigger](https://huggingface.co/datasets/reachjalil/jev-luna-pagerduty-trigger). Write-up: [`docs/article/jev-vs-luna-pagerduty.md`](article/jev-vs-luna-pagerduty.md).
 
 ## Start a local OpenTelemetry receiver with one config
 
@@ -48,6 +75,8 @@ The default config is read from your current working directory. Use `--config ./
 | `rules` | `[]` | Regular expressions tested against the redacted body before any model call; first match wins |
 | `cacheSize` | `1000` | Decisions kept in memory, keyed by a hash of the redacted model input; `0` disables the cache |
 | `cacheTtlMs` | `300000` | How long a cached decision stays valid |
+| `intent` | `triage` | `triage` or `page` |
+| `pageAbove` | `0.5` | Pager only; fire when probability is at least this |
 
 ### Send logs from your application
 

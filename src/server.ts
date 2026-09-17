@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { createRequire } from 'node:module';
-import { createJevLogs, decisionAttributes, type JevOptions, type Decision } from './index.js';
+import { createJevLogs, createJevPager, scoringAttributes, isPageDecision, type JevOptions, type Decision, type PageDecision, type PagerRule, type Rule } from './index.js';
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
 type ObjectValue = Record<string, unknown>;
@@ -8,16 +8,17 @@ export interface JevLogEvent {
   resource: ObjectValue;
   scope: ObjectValue;
   logRecord: ObjectValue;
-  decision: Decision;
+  decision: Decision | PageDecision;
 }
-export interface JevServerOptions extends JevOptions {
+export interface JevServerOptions extends Omit<JevOptions, 'rules'> {
+  rules?: Rule[] | PagerRule[];
   /** Loopback only. Place an authenticated collector in front for remote traffic. */
   port?: number;
   /** Receives the original OTLP record, including identifiers, and its decision. Required unless forwardUrl is set. */
   onLog?: (event: JevLogEvent) => void | Promise<void>;
   /** OTLP HTTP/JSON logs endpoint that receives the annotated batch before onLog runs. */
   forwardUrl?: string;
-  /** annotate forwards every record; analysis-only forwards only records routed to analysis. Default annotate. */
+  /** annotate forwards every record; analysis-only forwards only records routed to analysis (or pages, when intent is page). Default annotate. */
   forwardMode?: 'annotate' | 'analysis-only';
   /** Extra request headers for forwarding. Defaults to OTEL_EXPORTER_OTLP_LOGS_HEADERS or OTEL_EXPORTER_OTLP_HEADERS. */
   forwardHeaders?: Record<string, string>;
@@ -26,11 +27,17 @@ export interface JevServerOptions extends JevOptions {
   concurrency?: number;
   /** Requests accepted at once before answering 503. Default 8. */
   maxRequests?: number;
+  /** triage (default) is retain/analyze. page is the PagerDuty-style trigger. */
+  intent?: 'triage' | 'page';
+  /** Pager only. Default 0.5. */
+  pageAbove?: number;
+  /** Pager only. Default false. */
+  pageWhenUnavailable?: boolean;
 }
 export interface JevServerStats {
   version: string; uptimeMs: number;
   requests: number; records: number; forwarded: number; forwardFailures: number; rejected: number; busy: number;
-  triage: ReturnType<ReturnType<typeof createJevLogs>['stats']>;
+  triage: (ReturnType<ReturnType<typeof createJevLogs>['stats']>) | (ReturnType<ReturnType<typeof createJevPager>['stats']> & { intent?: 'page' });
 }
 function object(value: unknown): value is ObjectValue { return value !== null && typeof value === 'object' && !Array.isArray(value); }
 function list(value: unknown): unknown[] { if (value === undefined) return []; if (!Array.isArray(value)) throw new Error('Expected an array'); return value; }
@@ -65,11 +72,11 @@ function decode(value: unknown): Pending[] {
   return result;
 }
 /** OTLP JSON KeyValue list for a decision. */
-function otlpAttributes(decision: Decision): ObjectValue[] {
-  return Object.entries(decisionAttributes(decision)).map(([key, value]) => ({ key, value: typeof value === 'string' ? { stringValue: value } : typeof value === 'boolean' ? { boolValue: value } : { doubleValue: value } }));
+function otlpAttributes(decision: Decision | PageDecision): ObjectValue[] {
+  return Object.entries(scoringAttributes(decision)).map(([key, value]) => ({ key, value: typeof value === 'string' ? { stringValue: value } : typeof value === 'boolean' ? { boolValue: value } : { doubleValue: value } }));
 }
 /** Rebuild the OTLP payload with jev.* attributes; the caller's parsed input is not mutated. */
-function annotate(root: ObjectValue, decisions: Map<ObjectValue, Decision>, mode: 'annotate' | 'analysis-only'): { payload: ObjectValue; count: number } {
+function annotate(root: ObjectValue, decisions: Map<ObjectValue, Decision | PageDecision>, mode: 'annotate' | 'analysis-only'): { payload: ObjectValue; count: number } {
   let count = 0;
   const resourceLogs = list(root.resourceLogs).flatMap(resource => {
     if (!object(resource)) return [];
@@ -77,7 +84,8 @@ function annotate(root: ObjectValue, decisions: Map<ObjectValue, Decision>, mode
       if (!object(scope)) return [];
       const logRecords = list(scope.logRecords).flatMap(record => {
         const decision = object(record) ? decisions.get(record) : undefined;
-        if (!decision || (mode === 'analysis-only' && decision.route === 'retain')) return [];
+        if (!decision) return [];
+        if (mode === 'analysis-only' && (isPageDecision(decision) ? !decision.page : decision.route === 'retain')) return [];
         count++;
         return [{ ...record as ObjectValue, attributes: [...list((record as ObjectValue).attributes), ...otlpAttributes(decision)] }];
       });
@@ -133,13 +141,18 @@ export async function startJevLogsServer(options: JevServerOptions) {
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('forwardTimeoutMs must be positive');
     forward = { url: url.href, mode: options.forwardMode ?? 'annotate', headers, timeoutMs };
   }
-  const jev = createJevLogs(options);
+  const paging = options.intent === 'page';
+  const jev = paging
+    ? createJevPager({ timeoutMs: options.timeoutMs, maxInputChars: options.maxInputChars, redact: options.redact, cache: options.cache, pageAbove: options.pageAbove, pageWhenUnavailable: options.pageWhenUnavailable, rules: options.rules as PagerRule[] | undefined })
+    : createJevLogs({ ...options, rules: options.rules as Rule[] | undefined });
   const slots = new Semaphore(concurrency);
   const started = Date.now();
   const counters = { requests: 0, records: 0, forwarded: 0, forwardFailures: 0, rejected: 0, busy: 0 };
   let inFlight = 0;
   const reply = (res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) => { res.writeHead(status, { 'content-type': 'application/json', ...headers }); res.end(JSON.stringify(body)); };
-  const stats = (): JevServerStats => ({ version, uptimeMs: Date.now() - started, ...counters, triage: jev.stats() });
+  const stats = (): JevServerStats => paging
+    ? { version, uptimeMs: Date.now() - started, ...counters, triage: { ...(jev as ReturnType<typeof createJevPager>).stats(), intent: 'page' } }
+    : { version, uptimeMs: Date.now() - started, ...counters, triage: (jev as ReturnType<typeof createJevLogs>).stats() };
   const server = createServer(async (req, res) => {
     if (req.url === '/health' && req.method === 'GET') { reply(res, 200, { status: 'ok', version, forwarding: Boolean(forward) }); return; }
     if (req.url === '/stats' && req.method === 'GET') { reply(res, 200, stats()); return; }
@@ -159,12 +172,13 @@ export async function startJevLogsServer(options: JevServerOptions) {
       try { root = JSON.parse(Buffer.concat(chunks).toString('utf8')); records = decode(root); }
       catch { reply(res, 400, { code: 3, message: 'Invalid OTLP JSON; maximum 100 records' }); return; }
       counters.records += records.length;
-      const decisions = new Map<ObjectValue, Decision>();
+      const decisions = new Map<ObjectValue, Decision | PageDecision>();
       await Promise.all(records.map(async event => {
         const release = await slots.acquire();
         try {
           const record = event.logRecord;
-          decisions.set(record, await jev.triage({ body: anyValue(record.body), severityNumber: record.severityNumber as number | undefined, severityText: typeof record.severityText === 'string' ? record.severityText : undefined, protected: list(record.attributes).some(a => object(a) && a.key === 'jev.protected' && anyValue(a.value) === true) }));
+          const input = { body: anyValue(record.body), severityNumber: record.severityNumber as number | undefined, severityText: typeof record.severityText === 'string' ? record.severityText : undefined, protected: list(record.attributes).some(a => object(a) && a.key === 'jev.protected' && anyValue(a.value) === true) };
+          decisions.set(record, paging ? await (jev as ReturnType<typeof createJevPager>).decide(input) : await (jev as ReturnType<typeof createJevLogs>).triage(input));
         } finally { release(); }
       }));
       let upstream: ObjectValue | undefined;

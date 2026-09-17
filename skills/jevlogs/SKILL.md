@@ -11,6 +11,13 @@ description: Use Jev (TypeSafe's structured evaluation model, via the Vercel AI 
 - Package: `jevlogs` on npm, Node.js 22+, ESM only
 - Model: `typesafe-ai/jev` through Vercel AI Gateway, using `experimental_evaluate` from the `ai` package (pinned to 7.0.105)
 
+Two jobs, two APIs. Do not mix them:
+
+| Job | API | What the code does |
+| --- | --- | --- |
+| Skip cheap logs before an LLM | `createJevLogs().triage()` | ERROR/FATAL stay `analyze`. Retain only low-value, low-priority, low-probability. |
+| Page a human now | `createJevPager().decide()` | One boolean. Fire if `probability >= pageAbove` (default 0.50). ERROR is not a page. INFO is not a veto. |
+
 Read `references/api.md` before writing code against the package. It lists the exact exports, option ranges, and decision rules copied from the implementation. Do not invent options that are not there.
 
 ## Pick an entry point
@@ -20,6 +27,7 @@ Read `references/api.md` before writing code against the package. It lists the e
 | See what a decision looks like, no setup | `npx jevlogs` (offline demo, fixed answers, no network) | No |
 | Run real Jev on a finite log file or JSONL | `npx jevlogs --live --file app.log` or `--stdin --json` | Yes |
 | Score records inside their own code | `createJevLogs().triage()` | Yes |
+| Page on-call from a log | `createJevPager().decide()` or `npx jevlogs --page` | Yes |
 | Annotate OpenTelemetry logs in place | `JevLogExporter` with `mode: 'annotate'` | Yes |
 | Skip the LLM-analysis branch for low-value logs | second processor with `mode: 'analysis-only'` | Yes |
 | Accept OTLP HTTP/JSON from any language | `npx jevlogs --live` or `startJevLogsServer` from `jevlogs/server` | Yes |
@@ -29,7 +37,8 @@ Read `references/api.md` before writing code against the package. It lists the e
 Quick commands that work today:
 
 ```bash
-npx jevlogs                                  # offline demo
+npx jevlogs --page                             # offline pager demo
+npx jevlogs --live --page --sample
 npx jevlogs --live --sample                  # 4 built-in samples through real Jev
 npx jevlogs --live --file ./app.log --limit 20
 cat app.jsonl | npx jevlogs --live --stdin --json > decisions.jsonl

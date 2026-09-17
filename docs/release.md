@@ -1,5 +1,9 @@
 # Releases
 
+## v0.4.0 — pager trigger
+
+See CHANGELOG.md. `createJevPager()` plus CLI `--page`. Do not npm publish until asked.
+
 ## v0.3.0 — forwarding receiver, rules, cache, streaming CLI
 
 See CHANGELOG.md. Publish with the same steps as below, using `./jevlogs-0.3.0.tgz`.

@@ -33,9 +33,12 @@ Health checks and cache hits still hit a reasoning model if you send every event
 
 Jev Logs scores each log first: how useful it is, how urgent it is, and whether it should go to deeper analysis. It uses [TypeSafe's Jev](https://typesafe.ai/) through the Vercel AI SDK, with a TypeScript API and an OpenTelemetry exporter wrapper.
 
+A second job, measured on a PagerDuty-style stream: **should a human be paged right now?** That path asks one boolean and thresholds the probability in your code. Do not fire on a discrete `urgency` label, and do not treat ERROR as a page.
+
 | Layer | What you get |
 | :--- | :--- |
 | **Score** | A 0-100 diagnostic-value score, priority, and actionable probability. |
+| **Page** | `createJevPager()`: `page` plus `probability`. Default cut 0.50. |
 | **Keep the pipeline** | Wrap your existing exporter. Resource, scope, timestamps, and trace context stay on the record. |
 | **Annotate first** | Annotation mode keeps every record and attaches `jev.*` attributes. |
 | **Route later** | Confidently low-value events can skip a separate LLM-analysis branch. |
@@ -85,6 +88,8 @@ The default config is read from your current working directory. Use `--config ./
 | `rules` | `[]` | Regular expressions tested against the redacted body before any model call; first match wins |
 | `cacheSize` | `1000` | Decisions kept in memory, keyed by a hash of the redacted model input; `0` disables the cache |
 | `cacheTtlMs` | `300000` | How long a cached decision stays valid |
+| `intent` | `triage` | `triage` or `page` |
+| `pageAbove` | `0.5` | Pager only; fire when `page_now.probability` is at least this |
 
 ### Send logs from your application
 
@@ -178,7 +183,7 @@ Rules run after protection and redaction and before the cache or the model, so k
 | **Explore signal quality in an OTel backend** | Wrap your exporter in annotation mode and inspect `jev.*` attributes. | Your exporter, backend queries, alerts, and dashboards. |
 | **Filter only the LLM analysis branch** | Preserve an archive processor and add a separate `analysis-only` processor. | Archive delivery and analysis-queue delivery. |
 | **Keep audit events eligible for analysis** | Set `protected: true` in standalone/CLI input or `jev.protected: true` in OTel attributes. | Your policy for deciding which records are protected. |
-| **Plan an analysis budget** | Use `estimateSavings()` with measured volume and your model prices. | Actual token metering and billing verification. |
+| **Page on-call from a log line** | `createJevPager().decide()` or `npx jevlogs --page`. Fire on `probability >= 0.50`, not on ERROR or `urgency==page`. | Your PagerDuty/Opsgenie client and runbook. |
 
 **[Read the capability and integration guide](https://jevlogs.com/guide/)**
 
@@ -202,6 +207,21 @@ No setup. No API key. A clearly labeled **offline demo** walks through four samp
 ```
 
 *Illustrative output. The default demo makes no network requests and does not run Jev inference.*
+
+PagerDuty-style demo (still offline, still no key):
+
+```sh
+npx jevlogs --page
+```
+
+```text
+  HOLD   GET /health returned 200 in 2ms
+  HOLD   INVALID_COUPON rejected at checkout
+  PAGE   Payment capture failed after three retries
+  PAGE   Replica lag 47m on primary still accepting writes
+```
+
+The coupon is ERROR and does not page. The replica lag is INFO and does. That is the point.
 
 ### Try real Jev
 
@@ -253,6 +273,22 @@ const decision = await jev.triage({
 
 console.log(decision);
 // value · priority · route · actionableProbability · reason
+```
+
+Page a human (one boolean; you own the cut):
+
+```ts
+import { createJevPager } from 'jevlogs';
+
+const pager = createJevPager({ pageAbove: 0.5 });
+const decision = await pager.decide({
+  body: 'Replica lag 47m on primary still accepting writes',
+  severityText: 'INFO',
+  service: 'orders-db',
+});
+if (decision.page) {
+  // call PagerDuty — do not also branch on a discrete urgency label
+}
 ```
 
 Requires **Node.js 22+** and a server-side `AI_GATEWAY_API_KEY` for live evaluation. The standalone API and CLI do not require OpenTelemetry at runtime. TypeScript projects checking dependency declarations may also need the OTel peer because the package exports its exporter types. Importing the library does not run the CLI.

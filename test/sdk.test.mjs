@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createJevLogs, JevLogExporter, estimateSavings, redactCommonSecrets } from '../dist/index.js';
+import { createJevLogs, createJevPager, JevLogExporter, JevPagerExporter, estimateSavings, redactCommonSecrets, shouldPage } from '../dist/index.js';
 import { LoggerProvider, BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 const low = async () => ({ value: 0, priority: 'low', actionableProbability: 0.02 });
 const makeRecord = (body = 'health ok', attributes = {}) => ({body, attributes, severityNumber: 9, hrTime:[1,0], hrTimeObserved:[1,0], resource:{attributes:{}}, instrumentationScope:{name:'test'}, droppedAttributesCount:0, spanContext:{traceId:'a'.repeat(32),spanId:'b'.repeat(16),traceFlags:1}});
@@ -62,6 +62,54 @@ test('concurrency bounded, shutdown drains and exporter failures propagate',asyn
  let active=0,max=0;const downstream=target();const exporter=new JevLogExporter({exporter:downstream,concurrency:2,evaluator:async()=>{active++;max=Math.max(active,max);await new Promise(r=>setTimeout(r,3));active--;return low();}});
  const pending=send(exporter,Array.from({length:7},(_,i)=>makeRecord(`record ${i}`)));await exporter.shutdown();await pending;assert.equal(max,2);assert.equal(downstream.batches[0].length,7);
  const failed=new JevLogExporter({exporter:{...target(),export(){throw Error('delivery')}},evaluator:low});assert.equal((await send(failed,[makeRecord()])).code,1);
+});
+test('pager thresholds probability in code; ERROR is not auto-paged', async () => {
+  const pager = createJevPager({ evaluator: async () => ({ probability: 0.91 }), cache: false });
+  const lag = await pager.decide({ body: 'replica lag 47m still taking writes', severityText: 'INFO' });
+  assert.equal(lag.page, true); assert.equal(lag.probability, 0.91); assert.equal(lag.reason, 'model');
+  const coupon = createJevPager({ evaluator: async () => ({ probability: 0.06 }), cache: false });
+  const noise = await coupon.decide({ body: 'INVALID_COUPON', severityText: 'ERROR' });
+  assert.equal(noise.page, false);
+  const tight = createJevPager({ pageAbove: 0.95, evaluator: async () => ({ probability: 0.91 }), cache: false });
+  assert.equal((await tight.decide({ body: 'lag' })).page, false);
+  assert.equal(shouldPage(0.5, 0.5), true);
+  assert.equal(shouldPage(0.49, 0.5), false);
+  assert.throws(() => createJevPager({ pageAbove: 1.2 }));
+});
+test('pager does not protect ERROR; unavailable does not page by default', async () => {
+  let calls = 0;
+  const pager = createJevPager({ evaluator: async () => { calls++; throw Error('down'); }, cache: false });
+  const miss = await pager.decide({ body: 'disk full', severityText: 'ERROR' });
+  assert.equal(miss.page, false); assert.equal(miss.reason, 'unavailable'); assert.equal(calls, 1);
+  const open = createJevPager({ pageWhenUnavailable: true, evaluator: async () => { throw Error('down'); }, cache: false });
+  assert.equal((await open.decide({ body: 'x' })).page, true);
+});
+test('pager rules and cache work without a discrete urgency label', async () => {
+  let calls = 0;
+  const pager = createJevPager({
+    evaluator: async () => { calls++; return { probability: 0.9 }; },
+    rules: [{ name: 'health', match: '^GET /health', route: 'hold' }, { match: 'pagerduty-test-page', route: 'page' }],
+  });
+  assert.equal((await pager.decide({ body: 'GET /health 200' })).page, false);
+  assert.equal((await pager.decide({ body: 'pagerduty-test-page now' })).page, true);
+  assert.equal(calls, 0);
+  const cached = createJevPager({ evaluator: async () => { calls++; return { probability: 0.8 }; } });
+  const a = await cached.decide({ body: 'payments processor timeout' });
+  const b = await cached.decide({ body: 'payments processor timeout' });
+  assert.equal(a.page, true); assert.equal(b.cached, true); assert.equal(calls, 1);
+  assert.throws(() => createJevPager({ rules: [{ match: 'x', route: 'retain' }] }), RangeError);
+});
+test('pager exporter annotates jev.page and can drop holds', async () => {
+  const downstream = target();
+  const exporter = new JevPagerExporter({ exporter: downstream, evaluator: async () => ({ probability: 0.06 }), mode: 'pages-only' });
+  assert.equal((await send(exporter, [makeRecord('INVALID_COUPON')])).code, 0);
+  assert.equal(downstream.batches.length, 0);
+  const all = target();
+  const annotate = new JevPagerExporter({ exporter: all, evaluator: async () => ({ probability: 0.91 }) });
+  await send(annotate, [makeRecord('replica lag 47m')]);
+  assert.equal(all.batches[0][0].attributes['jev.page'], true);
+  assert.equal(all.batches[0][0].attributes['jev.page_probability'], 0.91);
+  await annotate.shutdown();
 });
 test('savings includes triage overhead, output, negative savings, and validation',()=>{
  const args={logs:1e6,tokensPerLog:300,llmInputPerMillion:2,llmOutputPerMillion:12,outputTokensPerLog:50,retainedFraction:.1};
