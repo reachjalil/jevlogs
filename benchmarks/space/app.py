@@ -111,18 +111,36 @@ def metrics_tables():
     for ds, points in m["e2_threshold_sweep"].items():
         for p in points:
             sweep_rows.append({"dataset": ds, **p})
+    feat_rows = []
+    for key, label in (("e7_cache", "E7 cache"), ("e8_rules", "E8 rules")):
+        block = m.get(key) or {}
+        for ds in ("hdfs", "bgl"):
+            s = block.get(ds) or {}
+            routing = s.get("routing") or {}
+            feat_rows.append({
+                "experiment": label,
+                "dataset": ds,
+                "cache_hit_rate": s.get("cache_hit_rate"),
+                "model_calls_with_tokens": s.get("model_calls_with_tokens"),
+                "rule_n": s.get("rule_n"),
+                "labeled_anomalies_retained_by_rule_n": s.get("labeled_anomalies_retained_by_rule_n"),
+                "anomaly_recall": routing.get("anomaly_recall"),
+                "routing_rate_retain": routing.get("routing_rate_retain"),
+            })
     spend = m.get("spend", {})
     intro = (
         f"Package under test: `{m.get('package_under_test')}`. "
         f"Seed `{m.get('seed')}`. "
         f"Estimated Jev spend from logged tokens: ${spend.get('estimated_spend_usd', 'n/a')} "
-        f"({spend.get('input_tokens', 'n/a')} input tokens). "
+        f"({spend.get('input_tokens', 'n/a')} input tokens, "
+        f"{spend.get('jev_calls_with_usage', 'n/a')} calls with usage). "
         "Confirm on the Vercel AI Gateway dashboard. "
         "HDFS labels are block-level, not line-level. "
         "BGL labels are line-level alerts. "
-        "The sample oversamples anomalies (~30%); it is not a production mix."
+        "The sample oversamples anomalies (~30%); it is not a production mix. "
+        "Cache hit rate depends on how repetitive the workload is."
     )
-    return intro, pd.DataFrame(rows), pd.DataFrame(sweep_rows)
+    return intro, pd.DataFrame(rows), pd.DataFrame(sweep_rows), pd.DataFrame(feat_rows)
 
 
 def sweep_view(dataset: str, threshold: float):
@@ -184,7 +202,7 @@ def build() -> gr.Blocks:
             """
 # Jev Logs triage explorer
 
-Measured routing of [Jev Logs](https://github.com/reachjalil/jevlogs) (`jevlogs@0.2.0`) on sanitized Loghub-derived HDFS and BGL samples.
+Measured routing of [Jev Logs](https://github.com/reachjalil/jevlogs) (`jevlogs@0.3.0` local build) on sanitized Loghub-derived HDFS and BGL samples.
 
 This Space never calls a model and has no API keys. Sliding `retainBelow` recomputes `route` locally:
 `retain` only when priority is `low`, value ≤ 25, and `actionableProbability` < threshold.
@@ -196,12 +214,20 @@ Protected, unavailable, and missing-probability records stay `analyze`.
 - Site: [jevlogs.com](https://jevlogs.com)
             """
         )
-        intro, e1_table, sweep_table = metrics_tables()
+        intro, e1_table, sweep_table, feat_table = metrics_tables()
         gr.Markdown(intro)
-        gr.Markdown("## E1 baseline (`retainBelow = 0.1`)")
+        gr.Markdown("## E1 baseline (`retainBelow = 0.1`, cache off)")
         gr.Dataframe(value=e1_table, label="Headline metrics")
         gr.Markdown("## E2 saved threshold sweep")
         gr.Dataframe(value=sweep_table, label="Recall vs routing rate from saved probabilities")
+        gr.Markdown("## E7 cache and E8 retain rules")
+        gr.Markdown(
+            "E7 uses the default 1,000-entry / 5-minute cache. E8 adds three retain rules "
+            "(HDFS PacketResponder terminating; BGL icache parity corrected; BGL rbs signal handler). "
+            "An HDFS rule that matches a heartbeat template will also match that template on block-labeled anomalies; "
+            "that is a finding about the rule, not about Jev."
+        )
+        gr.Dataframe(value=feat_table, label="Cache hit rate, model calls, rule hits")
 
         gr.Markdown("## Recompute routing from saved probabilities")
         dataset = gr.Radio(["hdfs", "bgl"], value="hdfs", label="Dataset")

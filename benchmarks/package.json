@@ -5,14 +5,14 @@
   "engines": {
     "node": ">=22"
   },
-  "description": "Reproducible Jev Logs evaluation on Loghub-derived HDFS and BGL samples. Tests published jevlogs@0.2.0.",
+  "description": "Reproducible Jev Logs evaluation on Loghub-derived HDFS and BGL samples. Tests the local 0.3.0 build at ../dist/index.js.",
   "scripts": {
     "start": "node run.mjs",
     "prepare-only": "node run.mjs --prepare",
-    "pilot": "node run.mjs --pilot"
+    "pilot": "node run.mjs --pilot",
+    "metrics-only": "node run.mjs --metrics-only"
   },
   "dependencies": {
-    "ai": "7.0.105",
-    "jevlogs": "0.2.0"
+    "ai": "7.0.105"
   }
 }

@@ -2,20 +2,20 @@
 /**
  * Reproducible Jev Logs log-triage benchmark.
  *
- * Package under test: published jevlogs@0.2.0 (not the local workspace source).
+ * Package under test: the local 0.3.0 build (`../dist/index.js` after `pnpm build`).
+ * npm may still show 0.2.0; this runner does not import the published package.
  * Every live Jev call goes through a measured evaluator that records
- * usage.inputTokens, usage.outputTokens, and latency.
+ * usage.inputTokens, usage.outputTokens, and latency, and returns inputTokens
+ * so createJevLogs().stats() can sum them.
  *
- * Usage (from this directory, with Node 22+):
- *   npm install
+ * Usage (from the repo root, Node 22+):
+ *   pnpm install --frozen-lockfile && pnpm build
  *   export AI_GATEWAY_API_KEY=...   # your Vercel AI Gateway key; never commit it
- *   node run.mjs                    # pilot, then full run
- *   node run.mjs --prepare          # download, sample, sanitize; no Gateway calls
- *   node run.mjs --pilot            # 20-record live probe, then stop
+ *   node benchmarks/run.mjs
  *
  * Writes results/*.jsonl (local, not committed), results/metrics.json, and PNG charts.
  */
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import {
@@ -31,7 +31,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { experimental_evaluate as evaluate } from 'ai';
-import { createJevLogs, estimateSavings, redactCommonSecrets } from 'jevlogs';
+import { createJevLogs, estimateSavings, redactCommonSecrets } from '../dist/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
@@ -76,7 +76,25 @@ const PREPARE_ONLY = args.has('--prepare');
 const PILOT_ONLY = args.has('--pilot');
 const METRICS_ONLY = args.has('--metrics-only');
 const RESUME = args.has('--resume') || !args.has('--fresh');
-const PACKAGE_LABEL = 'jevlogs@0.2.0';
+const E8_RULES = [
+  { name: 'hdfs-packet-responder-term', match: 'PacketResponder \\d+ for block .+ terminating', flags: 'i', route: 'retain' },
+  { name: 'bgl-icache-parity', match: 'instruction cache parity error corrected', flags: 'i', route: 'retain' },
+  { name: 'bgl-rbs-handler', match: 'microseconds spent in the rbs signal handler', flags: 'i', route: 'retain' },
+];
+
+function packageLabel() {
+  const version = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')).version;
+  let git = 'unknown';
+  try { git = execSync('git rev-parse --short HEAD', { cwd: REPO_ROOT, encoding: 'utf8' }).trim(); } catch { /* offline */ }
+  return `jevlogs@${version} (git ${git})`;
+}
+
+function npmLatest() {
+  try { return execSync('npm view jevlogs version', { encoding: 'utf8' }).trim(); } catch { return null; }
+}
+
+const PACKAGE_LABEL = packageLabel();
+const NPM_LATEST = npmLatest();
 
 const usageStore = new AsyncLocalStorage();
 const runState = {
@@ -127,7 +145,8 @@ function hydrateUsage() {
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     const row = JSON.parse(line);
-    runState.attempts++;
+    const modelAttempt = Number.isFinite(row.evaluator_ms) || Number.isFinite(row.input_tokens);
+    if (modelAttempt) runState.attempts++;
     if (Number.isFinite(row.input_tokens)) {
       runState.inputTokens += row.input_tokens;
       runState.calls++;
@@ -579,14 +598,66 @@ const measuredEvaluator = async (state, abortSignal) => {
   };
 };
 
-function makeJev() {
+function makeJev(overrides = {}) {
   return createJevLogs({
     retainBelow: 0.1,
     timeoutMs: TIMEOUT_MS,
     maxInputChars: 8000,
     redact: sanitizeBody,
     evaluator: measuredEvaluator,
+    cache: false,
+    rules: [],
+    ...overrides,
   });
+}
+
+function loadStats(name) {
+  const path = join(RESULTS, `${name}.stats.json`);
+  return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
+}
+
+function writeStats(name, jev) {
+  writeFileSync(join(RESULTS, `${name}.stats.json`), JSON.stringify(jev.stats(), null, 2));
+}
+
+function summarizeFeature(rows, stats, rules) {
+  const cached_n = rows.filter(r => r.cached).length;
+  const withTok = rows.filter(r => Number.isFinite(r.input_tokens));
+  const ruleRows = rows.filter(r => r.reason === 'rule');
+  const rule_names = {};
+  for (const r of ruleRows) {
+    const name = r.rule || 'unnamed';
+    rule_names[name] = (rule_names[name] ?? 0) + 1;
+  }
+  const anomByRule = rows.filter(r => r.label === 'anomaly' && r.reason === 'rule' && r.route === 'retain');
+  return {
+    n: rows.length,
+    stats,
+    cached_n,
+    cache_hit_rate: rows.length ? cached_n / rows.length : null,
+    model_calls_with_tokens: withTok.length,
+    unique_bodies: new Set(rows.map(r => r.body)).size,
+    tokens: {
+      mean_input: mean(withTok.map(r => r.input_tokens)),
+      total_input: withTok.reduce((a, r) => a + r.input_tokens, 0),
+      n_with_usage: withTok.length,
+    },
+    rules: rules ?? null,
+    rule_n: ruleRows.length,
+    rule_hit_rate: rows.length ? ruleRows.length / rows.length : 0,
+    rule_names,
+    labeled_anomalies_retained_by_rule_n: anomByRule.length,
+    labeled_anomalies_retained_by_rule_examples: anomByRule.slice(0, 15).map(r => ({
+      id: r.id,
+      line_hash: r.line_hash,
+      rule: r.rule,
+      body: r.body,
+      original_level: r.original_level,
+    })),
+    unique_anomaly_bodies_retained_by_rule: [...new Set(anomByRule.map(r => r.body))],
+    rule_hits_on_protected_n: ruleRows.filter(r => r.protected_input).length,
+    routing: summarizeDecisions(rows, rows[0]?.dataset),
+  };
 }
 
 async function mapPool(items, limit, fn) {
@@ -1171,6 +1242,22 @@ async function main() {
     await runExperiment(jev, consistencyBaseLive.map(r => ({ ...r, id: `${r.id}:a` })), 'e4_a', join(RESULTS, 'e4_a.jsonl'));
     await runExperiment(jev, consistencyBaseLive.map(r => ({ ...r, id: `${r.id}:b` })), 'e4_b', join(RESULTS, 'e4_b.jsonl'));
     await runExperiment(jev, adversarialRecords, 'e5_adversarial', join(RESULTS, 'e5_adversarial.jsonl'));
+
+    log('E7 cache on (default 1000 / 5 min)');
+    const e7HdfsJev = makeJev({ cache: { maxEntries: 1000, ttlMs: 300_000 } });
+    await runExperiment(e7HdfsJev, hdfsEval, 'e7_hdfs', join(RESULTS, 'e7_hdfs.jsonl'));
+    writeStats('e7_hdfs', e7HdfsJev);
+    const e7BglJev = makeJev({ cache: { maxEntries: 1000, ttlMs: 300_000 } });
+    await runExperiment(e7BglJev, bglEval, 'e7_bgl', join(RESULTS, 'e7_bgl.jsonl'));
+    writeStats('e7_bgl', e7BglJev);
+
+    log('E8 retain rules plus default cache');
+    const e8HdfsJev = makeJev({ cache: { maxEntries: 1000, ttlMs: 300_000 }, rules: E8_RULES });
+    await runExperiment(e8HdfsJev, hdfsEval, 'e8_hdfs', join(RESULTS, 'e8_hdfs.jsonl'));
+    writeStats('e8_hdfs', e8HdfsJev);
+    const e8BglJev = makeJev({ cache: { maxEntries: 1000, ttlMs: 300_000 }, rules: E8_RULES });
+    await runExperiment(e8BglJev, bglEval, 'e8_bgl', join(RESULTS, 'e8_bgl.jsonl'));
+    writeStats('e8_bgl', e8BglJev);
   } else if (existsSync(join(RESULTS, 'pilot.json'))) {
     pilotReport = JSON.parse(readFileSync(join(RESULTS, 'pilot.json'), 'utf8'));
   }
@@ -1284,15 +1371,31 @@ async function main() {
     bgl: costModel(e1.bgl, meanJevInput, questionTokens ?? 0, prices),
   };
 
-  const latencySamples = {
-    hdfs: e1Hdfs.map(r => r.wall_ms).filter(Number.isFinite).slice(0, 2500),
-    bgl: e1Bgl.map(r => r.wall_ms).filter(Number.isFinite).slice(0, 2500),
+  const readFeat = async (name) => existsSync(join(RESULTS, `${name}.jsonl`)) ? readJsonl(join(RESULTS, `${name}.jsonl`)) : [];
+  const e7HdfsRows = await readFeat('e7_hdfs');
+  const e7BglRows = await readFeat('e7_bgl');
+  const e8HdfsRows = await readFeat('e8_hdfs');
+  const e8BglRows = await readFeat('e8_bgl');
+  const e7 = {
+    note: 'Default cache is 1,000 entries and 5 minutes TTL, keyed by SHA-256 of the redacted model input. Hit rate depends on how repetitive the workload is.',
+    hdfs: summarizeFeature(e7HdfsRows, loadStats('e7_hdfs'), null),
+    bgl: summarizeFeature(e7BglRows, loadStats('e7_bgl'), null),
+  };
+  const e8 = {
+    note: 'Rules run after protection and redaction, before cache and the model. Protected ERROR/FATAL records must not be decided by rules. An HDFS PacketResponder retain rule matches routine success lines that Loghub still labels anomalous because labels are block-level; that is a finding about the rule and the labels, not about Jev.',
+    rules: E8_RULES,
+    hdfs: summarizeFeature(e8HdfsRows, loadStats('e8_hdfs'), E8_RULES),
+    bgl: summarizeFeature(e8BglRows, loadStats('e8_bgl'), E8_RULES),
   };
 
   const metrics = {
     created_at: new Date().toISOString(),
-    package_under_test: 'jevlogs@0.2.0',
-    evaluator: 'custom measured experimental_evaluate typesafe-ai/jev via ai@7.0.105',
+    package_under_test: PACKAGE_LABEL,
+    npm_latest_when_run: NPM_LATEST,
+    git_head: PACKAGE_LABEL.replace(/^.*git /, '').replace(/\)$/, ''),
+    evaluator: 'custom measured experimental_evaluate typesafe-ai/jev via ai@7.0.105, returning inputTokens into createJevLogs().stats()',
+    e1_e5_cache: false,
+    e1_note: 'E1–E5 used cache:false and no rules so every non-protected record is a real model call. Earlier on-disk E1–E5 decisions used the same measured evaluator questions as src/index.ts; 0.2.0 had no cache, which matches cache:false on 0.3.0. E7–E8 ran against the local 0.3.0 build.',
     seed: SEED,
     sampling: {
       n_per_dataset: N_PER_DATASET,
@@ -1337,11 +1440,12 @@ async function main() {
     e4_consistency: e4,
     e5_adversarial: { ...e5, pairs: e5.pairs },
     e6_cost_model: e6,
+    e7_cache: e7,
+    e8_rules: e8,
     prevalence_reweighted: {
       hdfs: reweight(e1Hdfs, hdfsPopRate),
       bgl: reweight(e1Bgl, bglPopRate),
     },
-    latency_samples_ms: latencySamples,
     links: {
       github: 'https://github.com/reachjalil/jevlogs',
       npm: 'https://www.npmjs.com/package/jevlogs',
@@ -1365,6 +1469,10 @@ async function main() {
     join(RESULTS, 'inputs_bgl.jsonl'),
     join(RESULTS, 'e1_hdfs.jsonl'),
     join(RESULTS, 'e1_bgl.jsonl'),
+    join(RESULTS, 'e7_hdfs.jsonl'),
+    join(RESULTS, 'e7_bgl.jsonl'),
+    join(RESULTS, 'e8_hdfs.jsonl'),
+    join(RESULTS, 'e8_bgl.jsonl'),
   ]);
   log(`done. calls=${runState.calls} input_tokens=${runState.inputTokens} estimated_spend_usd=${estimatedSpendUsd().toFixed(6)}`);
   log('Confirm this spend on the Vercel AI Gateway dashboard. The figure above is computed from logged tokens only.');

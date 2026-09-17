@@ -1,0 +1,17 @@
+{
+  "decisions": 2502,
+  "model": 88,
+  "cached": 2412,
+  "protected": 0,
+  "rules": 0,
+  "unavailable": 2,
+  "retain": 21,
+  "analyze": 2481,
+  "inputTokens": 48019,
+  "modelLatencyMs": {
+    "count": 88,
+    "total": 86172.64433199998,
+    "max": 1969.3318329999984
+  },
+  "cacheEntries": 88
+}

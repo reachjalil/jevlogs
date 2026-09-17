@@ -1,21 +1,20 @@
 # Jev Logs log-triage benchmark
 
-Reproducible evaluation of published **`jevlogs@0.2.0`** on labeled public logs (Loghub HDFS_v1 and BGL via Hugging Face). Live calls use a measured `experimental_evaluate` wrapper (the pattern in `skills/jevlogs/examples/measured-evaluator.ts`) so token usage and latency are recorded, not assumed.
+Reproducible evaluation of the **local jevlogs 0.3.0 build** (`../dist/index.js` after `pnpm build`) on labeled public logs (Loghub HDFS_v1 and BGL via Hugging Face). Live calls use a measured `experimental_evaluate` wrapper (the pattern in `skills/jevlogs/examples/measured-evaluator.ts`) so token usage and latency are recorded, not assumed. E1–E5 run with `cache: false` and no `rules`. E7–E8 use the 0.3.0 default cache and a small retain-rule set.
 
-This directory is self-contained. It does **not** import the local workspace `src/` tree. That matters because the GitHub `main` snapshot may be newer than the npm release under test.
+npm may still show `jevlogs@0.2.0`. This directory does not import that package.
 
 ## One command
 
-Requires Node.js 22+, `uv` (for PyArrow sampling and matplotlib charts), and the `hf` CLI.
+Requires Node.js 22+, `uv` (for PyArrow sampling and matplotlib charts), and the `hf` CLI. Run from the **repository root** (the worktree that contains `src/` and `pnpm-lock.yaml`):
 
 ```sh
-cd benchmarks
-npm install
+pnpm install --frozen-lockfile && pnpm build
 export AI_GATEWAY_API_KEY=...   # your Vercel AI Gateway key; never commit it
-node run.mjs
+node benchmarks/run.mjs
 ```
 
-`run.mjs` downloads the parquet shards (cached under `.cache/`), hash-samples 2,500 records per dataset at seed `20260916` with a 30% anomalous mix, sanitizes bodies, runs a 20-record pilot, then E1–E6. It stops live calls if estimated spend from logged input tokens reaches **$8**.
+`run.mjs` downloads the parquet shards (cached under `benchmarks/.cache/`), hash-samples 2,500 records per dataset at seed `20260916` with a 30% anomalous mix, sanitizes bodies, runs a 20-record pilot, then E1–E8. It stops live calls if estimated spend from logged input tokens reaches **$8**. Resume is the default: existing decision JSONL is not re-scored.
 
 Useful flags:
 
@@ -25,12 +24,13 @@ Useful flags:
 | `--pilot` | Live 20-record probe, then stop. |
 | `--resume` | Skip records already in decision JSONL (default). |
 | `--fresh` | Ignore existing decision JSONL. |
+| `--metrics-only` | Recompute `metrics.json` and PNG charts from saved JSONL. |
 
 ## What it costs
 
-Jev list price is fetched at run time from https://vercel.com/ai-gateway/models/jev (input billed, output $0 on that page). A 20-record pilot on 2026-09-16 measured **536 input tokens per model call** and **$0.00034** on the probe. The full run logged **4,476** Jev calls with usage, **2,404,514** input tokens, and an estimated **$0.10099** at the fetched $0.042 per million input price. Confirm that figure on the Vercel AI Gateway dashboard. The $8 stop was not approached.
+Jev list price is fetched at run time from https://vercel.com/ai-gateway/models/jev (input billed, output $0 on that page). A 20-record pilot on 2026-09-16 measured **~536 input tokens per model call**. The full E1–E8 run logged **6,841** Jev calls with usage, **3,665,677** input tokens, and an estimated **$0.153958** at the fetched $0.042 per million input price. Confirm that figure on the Vercel AI Gateway dashboard. The $8 stop was not approached.
 
-Protected ERROR/FATAL records do not call Jev. On BGL that is most labeled alerts; on HDFS it is none.
+Protected ERROR/FATAL records do not call Jev. On BGL that is most labeled alerts; on HDFS it is none. Cache hits also skip the model; that saving is large on repetitive HDFS templates and small on more varied BGL lines.
 
 ## Outputs
 
@@ -38,6 +38,7 @@ Protected ERROR/FATAL records do not call Jev. On BGL that is most labeled alert
 | --- | --- |
 | `results/metrics.json` | yes |
 | `results/*.png` | yes |
+| `results/*.stats.json` | yes |
 | `results/*.jsonl` | no (Hugging Face only; can be large) |
 | `.cache/` | no |
 

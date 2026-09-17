@@ -22,7 +22,7 @@ tags:
 
 Interactive view of [reachjalil/jevlogs-log-triage-benchmark](https://huggingface.co/datasets/reachjalil/jevlogs-log-triage-benchmark).
 
-This Space **does not call Jev**. It recomputes routing from saved probabilities and shows the measured metrics from `jevlogs@0.2.0` on sanitized Loghub-derived HDFS and BGL samples.
+This Space **does not call Jev**. It recomputes routing from saved probabilities and shows the measured metrics from the **jevlogs 0.3.0** build on sanitized Loghub-derived HDFS and BGL samples.
 
 - Dataset: https://huggingface.co/datasets/reachjalil/jevlogs-log-triage-benchmark
 - GitHub: https://github.com/reachjalil/jevlogs

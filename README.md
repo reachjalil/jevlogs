@@ -424,7 +424,7 @@ The AI SDK’s `experimental_evaluate` API is pinned and experimental. Jev is a 
 
 ## Benchmark
 
-A reproducible run of published `jevlogs@0.2.0` on sanitized Loghub HDFS and BGL samples is on Hugging Face ([dataset](https://huggingface.co/datasets/reachjalil/jevlogs-log-triage-benchmark), [Space](https://huggingface.co/spaces/reachjalil/jevlogs-triage-explorer); write-up at [`docs/article/jevlogs-log-triage-findings.md`](docs/article/jevlogs-log-triage-findings.md)). On 2026-09-16, default routing retained 0.84% of a 30%-anomalous HDFS sample (5 of 750 block-labeled “anomalies,” all successful block verifications) and relied on the local FATAL rule for 100% of sampled BGL alerts.
+A reproducible run of the **0.3.0** tree (`cache: false` for E1–E5, then default cache and retain rules for E7–E8) on sanitized Loghub HDFS and BGL samples is on Hugging Face ([dataset](https://huggingface.co/datasets/reachjalil/jevlogs-log-triage-benchmark), [Space](https://huggingface.co/spaces/reachjalil/jevlogs-triage-explorer); write-up at [`docs/article/jevlogs-log-triage-findings.md`](docs/article/jevlogs-log-triage-findings.md)). On 2026-09-16, default routing retained 0.84% of a 30%-anomalous HDFS sample (5 of 750 block-labeled “anomalies,” all successful block verifications) and relied on the local FATAL rule for 100% of sampled BGL alerts. The default cache reused 96.5% of HDFS decisions (88 unique bodies in 2,500 lines); that hit rate is a property of repetition, not a promise for mixed production streams.
 
 ## Launch artwork
 
