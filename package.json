@@ -1,0 +1,50 @@
+{
+  "name": "jevlogs",
+  "version": "0.1.0",
+  "description": "Confidence-aware log triage with Jev and OpenTelemetry",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "pnpm build && node --test test/*.test.mjs",
+    "prepack": "pnpm build",
+    "site:build": "pnpm --filter jevlogs-site build",
+    "deploy": "pnpm site:build && wrangler deploy",
+    "check:examples": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck examples/telemetry.ts"
+  },
+  "dependencies": {
+    "ai": "7.0.105"
+  },
+  "peerDependencies": {
+    "@opentelemetry/sdk-logs": "0.222.0"
+  },
+  "devDependencies": {
+    "@opentelemetry/api": "1.9.0",
+    "@opentelemetry/sdk-logs": "0.222.0",
+    "typescript": "5.9.3",
+    "wrangler": "4.129.0"
+  },
+  "packageManager": "pnpm@10.15.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reachjalil/jevlogs.git"
+  },
+  "homepage": "https://jevlogs.com",
+  "bugs": {
+    "url": "https://github.com/reachjalil/jevlogs/issues"
+  }
+}

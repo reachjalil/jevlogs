@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.astro/
+.env
+.env.*
+!.env.example
+.sites-runtime/
+*.tgz
+.DS_Store
+.wrangler/
+npm-placeholder/
