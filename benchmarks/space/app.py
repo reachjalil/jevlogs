@@ -243,12 +243,7 @@ Protected, unavailable, and missing-probability records stay `analyze`.
         sav_inputs = [logs, tokens_per_log, output_tokens, llm_in, llm_out, analyze_rate, jev_price, qtok, include_unfiltered]
         demo.load(savings_view, sav_inputs, [savings_table, savings_note])
         for ctrl in sav_inputs:
-            if isinstance(ctrl, gr.Checkbox):
-                ctrl.change(savings_view, sav_inputs, [savings_table, savings_note])
-            elif isinstance(ctrl, gr.Slider):
-                ctrl.release(savings_view, sav_inputs, [savings_table, savings_note])
-            else:
-                ctrl.blur(savings_view, sav_inputs, [savings_table, savings_note])
+            ctrl.change(savings_view, sav_inputs, [savings_table, savings_note])
 
         gr.Markdown(
             f"""
