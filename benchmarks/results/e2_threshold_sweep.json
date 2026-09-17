@@ -1,0 +1,86 @@
+{
+  "hdfs": [
+    {
+      "retainBelow": 0.05,
+      "n": 2500,
+      "anomaly_recall": 1,
+      "routing_rate_retain": 0,
+      "precision_retain": null,
+      "analyze_rate": 1
+    },
+    {
+      "retainBelow": 0.1,
+      "n": 2500,
+      "anomaly_recall": 0.9933333333333333,
+      "routing_rate_retain": 0.0084,
+      "precision_retain": 0.7619047619047619,
+      "analyze_rate": 0.9916
+    },
+    {
+      "retainBelow": 0.2,
+      "n": 2500,
+      "anomaly_recall": 0.9186666666666666,
+      "routing_rate_retain": 0.106,
+      "precision_retain": 0.769811320754717,
+      "analyze_rate": 0.894
+    },
+    {
+      "retainBelow": 0.3,
+      "n": 2500,
+      "anomaly_recall": 0.9186666666666666,
+      "routing_rate_retain": 0.106,
+      "precision_retain": 0.769811320754717,
+      "analyze_rate": 0.894
+    },
+    {
+      "retainBelow": 0.5,
+      "n": 2500,
+      "anomaly_recall": 0.9186666666666666,
+      "routing_rate_retain": 0.106,
+      "precision_retain": 0.769811320754717,
+      "analyze_rate": 0.894
+    }
+  ],
+  "bgl": [
+    {
+      "retainBelow": 0.05,
+      "n": 2500,
+      "anomaly_recall": 1,
+      "routing_rate_retain": 0,
+      "precision_retain": null,
+      "analyze_rate": 1
+    },
+    {
+      "retainBelow": 0.1,
+      "n": 2500,
+      "anomaly_recall": 1,
+      "routing_rate_retain": 0.0012,
+      "precision_retain": 1,
+      "analyze_rate": 0.9988
+    },
+    {
+      "retainBelow": 0.2,
+      "n": 2500,
+      "anomaly_recall": 1,
+      "routing_rate_retain": 0.0068,
+      "precision_retain": 1,
+      "analyze_rate": 0.9932
+    },
+    {
+      "retainBelow": 0.3,
+      "n": 2500,
+      "anomaly_recall": 1,
+      "routing_rate_retain": 0.0116,
+      "precision_retain": 1,
+      "analyze_rate": 0.9884
+    },
+    {
+      "retainBelow": 0.5,
+      "n": 2500,
+      "anomaly_recall": 1,
+      "routing_rate_retain": 0.0196,
+      "precision_retain": 1,
+      "analyze_rate": 0.9804
+    }
+  ]
+}

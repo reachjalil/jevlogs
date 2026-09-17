@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { loadEnvFile } from 'node:process';
-import { compileRules, type Rule, type CacheOptions } from './index.js';
+import { compileRules, compilePagerRules, type Rule, type PagerRule, type CacheOptions } from './index.js';
 
 export interface JevConfig {
   port?: number; envFile?: string; retainBelow?: number; timeoutMs?: number; maxInputChars?: number;
@@ -9,11 +9,15 @@ export interface JevConfig {
   forwardUrl?: string;
   /** annotate forwards every record; analysis-only forwards records routed to analysis. Default annotate. */
   forwardMode?: 'annotate' | 'analysis-only';
-  rules?: Rule[];
+  rules?: Rule[] | PagerRule[];
   /** Derived from cacheSize and cacheTtlMs in the JSON file. */
   cache?: CacheOptions | false;
+  /** triage (default) scores diagnostic value. page asks whether a human must act now. */
+  intent?: 'triage' | 'page';
+  /** Pager only. Fire when page_now.probability is at least this. Default 0.5. */
+  pageAbove?: number;
 }
-const KEYS = ['port', 'envFile', 'retainBelow', 'timeoutMs', 'maxInputChars', 'forwardUrl', 'forwardMode', 'rules', 'cacheSize', 'cacheTtlMs'];
+const KEYS = ['port', 'envFile', 'retainBelow', 'timeoutMs', 'maxInputChars', 'forwardUrl', 'forwardMode', 'rules', 'cacheSize', 'cacheTtlMs', 'intent', 'pageAbove'];
 /** JSON only: configuration never executes application code. Existing environment variables win. */
 export async function loadJevConfig(path?: string): Promise<JevConfig> {
   const filename = resolve(path ?? 'jevlogs.config.json');
@@ -25,7 +29,7 @@ export async function loadJevConfig(path?: string): Promise<JevConfig> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('jevlogs config must be an object');
   const config = value as Record<string, unknown>;
   for (const key of Object.keys(config)) if (!KEYS.includes(key)) throw new Error(`Unknown config option: ${key}`);
-  for (const key of ['port', 'retainBelow', 'timeoutMs', 'maxInputChars', 'cacheSize', 'cacheTtlMs']) if (config[key] !== undefined && (typeof config[key] !== 'number' || !Number.isFinite(config[key]))) throw new Error(`Config ${key} must be a finite number`);
+  for (const key of ['port', 'retainBelow', 'timeoutMs', 'maxInputChars', 'cacheSize', 'cacheTtlMs', 'pageAbove']) if (config[key] !== undefined && (typeof config[key] !== 'number' || !Number.isFinite(config[key]))) throw new Error(`Config ${key} must be a finite number`);
   if (config.envFile !== undefined) {
     if (typeof config.envFile !== 'string' || !config.envFile.trim()) throw new Error('Config envFile must be a path');
     try { loadEnvFile(resolve(dirname(filename), config.envFile)); } catch { throw new Error('Cannot load configured envFile'); }
@@ -37,8 +41,12 @@ export async function loadJevConfig(path?: string): Promise<JevConfig> {
   }
   if (config.forwardMode !== undefined && config.forwardMode !== 'annotate' && config.forwardMode !== 'analysis-only') throw new Error('Config forwardMode must be "annotate" or "analysis-only"');
   if (config.forwardMode !== undefined && config.forwardUrl === undefined) throw new Error('Config forwardMode requires forwardUrl');
+  if (config.intent !== undefined && config.intent !== 'triage' && config.intent !== 'page') throw new Error('Config intent must be "triage" or "page"');
   if (config.rules !== undefined) {
-    try { compileRules(config.rules as Rule[]); } catch (error) { throw new Error(`Config ${error instanceof Error ? error.message : 'rules are invalid'}`); }
+    try {
+      if (config.intent === 'page') compilePagerRules(config.rules as PagerRule[]);
+      else compileRules(config.rules as Rule[]);
+    } catch (error) { throw new Error(`Config ${error instanceof Error ? error.message : 'rules are invalid'}`); }
   }
   const { cacheSize, cacheTtlMs, ...rest } = config;
   const result: JevConfig = rest as JevConfig;

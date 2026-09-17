@@ -1,7 +1,7 @@
 {
   "name": "jevlogs",
-  "version": "0.3.0",
-  "description": "Confidence-aware log triage with Jev and OpenTelemetry",
+  "version": "0.4.0",
+  "description": "Score logs with Jev: triage for LLM analysis, or page on-call from a probability threshold",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -28,7 +28,7 @@
     "prepack": "pnpm build",
     "site:build": "pnpm --filter jevlogs-site build",
     "deploy": "pnpm site:build && wrangler deploy",
-    "check:examples": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck examples/telemetry.ts examples/otlp-client.ts"
+    "check:examples": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck examples/telemetry.ts examples/otlp-client.ts examples/pager.ts"
   },
   "dependencies": {
     "ai": "7.0.105"
@@ -70,7 +70,7 @@
     "jev",
     "logs",
     "opentelemetry",
-    "observability",
+    "pagerduty",
     "cli",
     "ai-sdk"
   ]

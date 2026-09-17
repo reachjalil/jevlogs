@@ -1,0 +1,19 @@
+{
+  "seed": 20260917,
+  "n": 3000,
+  "counts": {
+    "page": 500,
+    "ticket": 250,
+    "ignore": 2250,
+    "trap": 854,
+    "error": 746,
+    "info_page": 254
+  },
+  "label_rule": "PagerDuty alerting principles: page iff a human must act now. Ticket = later. Ignore = notification.",
+  "sources": [
+    "https://response.pagerduty.com/oncall/alerting_principles/",
+    "https://typesafe.ai/blog/introducing-system-one-models-and-jev",
+    "https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway"
+  ],
+  "note": "Synthetic. Not production logs. Invented checkout/payments SaaS stream."
+}
