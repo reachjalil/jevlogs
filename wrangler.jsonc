@@ -1,7 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "jevlogs",
+  "workers_dev": true,
   "compatibility_date": "2026-09-16",
+  "routes": [{ "pattern": "jevlogs.com", "custom_domain": true }],
   "assets": {
     "directory": "./site/dist",
     "not_found_handling": "404-page",

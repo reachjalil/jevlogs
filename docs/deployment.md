@@ -1,28 +1,18 @@
 # Cloudflare hosting
 
-Current site: https://jevlogs.workspaceagent.workers.dev
-Intended canonical domain: https://jevlogs.com
+Live site: https://jevlogs.com
+Workers preview: https://jevlogs.workspaceagent.workers.dev
 
 Deploy after an authenticated `wrangler login`:
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm test
-pnpm deploy
+pnpm run deploy
 ```
 
-`wrangler.jsonc` serves the Astro `site/dist` assets. No runtime secret or server is required. This repository's CI validates code but does not hold Cloudflare deploy credentials.
+Use `pnpm run deploy` (not bare `pnpm deploy`). pnpm’s built-in `deploy` command is unrelated; the repo script builds the Astro site and runs `wrangler deploy`.
 
-## Connect jevlogs.com
+`wrangler.jsonc` serves the Astro `site/dist` assets and attaches the Worker Custom Domain `jevlogs.com`. No runtime secret or server is required. This repository's CI validates code but does not hold Cloudflare deploy credentials.
 
-The domain is not yet present in the connected Cloudflare account. Its nameservers currently point at registrar-servers.com. To use a Worker Custom Domain, first add the existing domain to the intended Cloudflare account, preserve any mail/other DNS records, and use Cloudflare's assigned nameservers at the registrar. Do not guess nameserver values.
-
-After Cloudflare reports the zone active, add to `wrangler.jsonc`:
-
-```json
-"routes": [{ "pattern": "jevlogs.com", "custom_domain": true }]
-```
-
-Then run `pnpm deploy` and verify HTTPS on both `/` and `/guide/` at the custom domain. The Cloudflare deployment is live independently of this DNS step.
-
-Reference: https://developers.cloudflare.com/workers/configuration/routing/custom-domains/
+After deploy, verify HTTPS on `/`, `/guide/`, `/llms.txt`, and `/index.md` at both the custom domain and the workers.dev URL.

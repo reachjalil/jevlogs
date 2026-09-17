@@ -1,4 +1,22 @@
 ---
-import '../styles/global.css';
+import Base from './Base.astro';
 ---
-<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width"/><title>Capabilities & integration guide — Jev Logs</title><meta name="description" content="Complete Jev Logs guide: CLI commands, JSONL, TypeScript API, OpenTelemetry routing, redaction, costs, and troubleshooting."/><link rel="icon" href="/favicon.svg"/></head><body><header class="wrap header"><a class="brand" href="/"><span class="mark">j_</span> jev logs</a><nav aria-label="Main navigation"><a href="/#savings">Savings</a><a href="https://github.com/reachjalil/jevlogs">GitHub ↗</a></nav></header><main class="wrap guide"><nav class="guide-toc" aria-label="Guide sections"><ul><li><a href="#choose-your-starting-point">Choose a use case</a></li><li><a href="#1-try-the-cli">CLI &amp; input formats</a></li><li><a href="#2-use-the-typescript-api">TypeScript API</a></li><li><a href="#3-annotate-your-opentelemetry-logs">OpenTelemetry setup</a></li><li><a href="#4-add-a-separate-analysis-branch">Analysis routing</a></li><li><a href="#5-protect-records-and-redact-context">Protection &amp; redaction</a></li><li><a href="#6-estimate-costs-before-routing">Cost calculation</a></li><li><a href="#troubleshooting">Troubleshooting</a></li></ul></nav><slot/></main><footer class="wrap"><a href="/">← Back to Jev Logs</a><span>MIT · v0.1 preview</span></footer></body></html>
+<Base
+  title="Quick start — Jev Logs"
+  description="Integrate Jev Logs with TypeScript and OpenTelemetry: CLI, local OTLP receiver, SDK, routing, redaction, and cost estimates."
+  ogType="article"
+  markdownHref="/guide.md"
+>
+  <article class="guide wrap" itemscope itemtype="https://schema.org/TechArticle">
+    <p class="guide-kicker"><a href="/">← Back to Jev’s desk</a><span>v0.2.0 · MIT · npx jevlogs</span></p>
+    <nav class="guide-toc" aria-label="On this page">
+      <a href="#start-a-local-opentelemetry-receiver-with-one-config">Receiver</a>
+      <a href="#1-try-the-cli">CLI</a>
+      <a href="#2-use-the-typescript-api">TypeScript</a>
+      <a href="#3-annotate-your-opentelemetry-logs">OpenTelemetry</a>
+      <a href="#4-add-a-separate-analysis-branch">Routing</a>
+      <a href="#troubleshooting">Troubleshooting</a>
+    </nav>
+    <slot />
+  </article>
+</Base>

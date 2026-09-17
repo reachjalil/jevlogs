@@ -1,0 +1,17 @@
+---
+import Logo from './Logo.astro';
+import { siteMeta } from '../site';
+---
+<footer class="site-footer">
+  <div class="wrap footer">
+    <a class="brand" href="/" aria-label="Jev Logs home">
+      <span class="mark" aria-hidden="true"><Logo /></span>
+      jev logs<span class="blue">_</span>
+    </a>
+    <span>v{siteMeta.version} · MIT · Built for the signal.</span>
+    <a href="/guide/">Docs</a>
+    <a href="/llms.txt">llms.txt</a>
+    <a href={siteMeta.npm} rel="noopener">npm</a>
+    <a href={siteMeta.repo} rel="noopener">GitHub ↗</a>
+  </div>
+</footer>

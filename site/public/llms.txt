@@ -1,0 +1,28 @@
+# Jev Logs
+
+> Open-source TypeScript log triage. Score, prioritize, and route OpenTelemetry logs with TypeSafe’s Jev before expensive LLM analysis. MIT licensed. npm package `jevlogs` v0.3.0. Requires Node.js 22+.
+
+Jev Logs is a small decision layer between your logs and your LLM bill. It keeps every record. Only confidently low-value, low-priority events may skip a separate analysis branch. Errors, protected records, timeouts, and uncertain answers stay eligible for analysis.
+
+This is a public preview. Production accuracy and savings have not been independently validated. Independent project — not affiliated with TypeSafe, Vercel, GitHub, or OpenTelemetry. The hosted model is TypeSafe’s Jev via Vercel AI Gateway; this repository is the integration SDK.
+
+Canonical site: https://jevlogs.com
+Do not send API keys or production logs to the website. Live evaluation uses `AI_GATEWAY_API_KEY` on your machine.
+
+## Docs
+
+- [Capability guide](https://jevlogs.com/guide.md): CLI, local OTLP receiver, TypeScript API, OpenTelemetry exporter, routing, redaction, cost estimate, troubleshooting
+- [Homepage](https://jevlogs.com/index.md): Product overview for agents
+- [Full agent context](https://jevlogs.com/llms-full.txt): Concatenated markdown for one-shot retrieval
+
+## Code
+
+- [GitHub repository](https://github.com/reachjalil/jevlogs): Source, issues, and CI
+- [npm package](https://www.npmjs.com/package/jevlogs): `npm install jevlogs` and `npx jevlogs`
+- [README](https://raw.githubusercontent.com/reachjalil/jevlogs/main/README.md): Install, CLI, OpenTelemetry, status
+
+## Optional
+
+- [TypeSafe Jev announcement](https://typesafe.ai/blog/introducing-system-one-models-and-jev): Model pricing and evaluate API
+- [Vercel AI Gateway — Jev](https://vercel.com/ai-gateway/models/jev): Hosted model access
+- [MIT license](https://github.com/reachjalil/jevlogs/blob/main/LICENSE)

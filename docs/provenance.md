@@ -1,7 +1,9 @@
-# Reuse provenance
+# Visual identity
 
-At the owner's explicit request, the Astro website adapts CloudBash's authored visual patterns: ink #11131b, blue #2448ff, muted #606473, line #dce0ea, tint #f2f4fa; system typography; tight display headings; vertical oversized wordmark; bordered navigation; split narrative/demo hero; code panels; responsive layout.
+The website uses original Jev Logs artwork: a relaxed ivory robot in cobalt headphones sorting log slips into **background** and **signal**. Source files live in `docs/assets/readme-banner.png` and `site/public/`. The generation prompt is in `docs/assets/readme-banner-prompt.md`. No GitHub endorsement or affiliation is implied.
 
-Reference: local CloudBash `apps/website/style.css` and `apps/website/pages/home.html`, inspected September 16, 2026 (working-tree design on main at b4d2c77). Only the requested design language and small CSS patterns are reused under the owner's explicit instruction. No private product code, service, credentials, deployment settings, or CloudBash documentation is included. This does not relicense CloudBash. Jev Logs has no build/runtime imports of sibling repositories.
+Color and type on the site follow that illustration: paper `#fbfaf5`, ink `#17192a`, cobalt `#2448ff`, Plus Jakarta Sans, Fraunces italics, IBM Plex Mono. The landing page’s sorting desk is an illustrative demo of the same four sample logs as `npx jevlogs`.
 
-The SDK and Astro content are new implementation. Upstream AI SDK, Astro and OpenTelemetry dependencies retain their respective licenses. Model documentation and pricing are linked and paraphrased, not copied as source code.
+An earlier pass adapted CloudBash visual patterns at the owner’s request (ink/blue tokens, split hero, code panels). This version replaces that system with the mascot-led desk. Only requested design language was ever reused; no private CloudBash product code, credentials, or documentation is included.
+
+The SDK and Astro content are original implementation. Upstream AI SDK, Astro, and OpenTelemetry dependencies retain their licenses. Model documentation and pricing are linked and paraphrased, not copied as source code.

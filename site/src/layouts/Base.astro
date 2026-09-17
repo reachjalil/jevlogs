@@ -1,0 +1,165 @@
+---
+import '../styles/global.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { siteMeta } from '../site';
+
+interface Props {
+  title: string;
+  description: string;
+  ogType?: 'website' | 'article';
+  markdownHref?: string;
+  noindex?: boolean;
+}
+
+const {
+  title,
+  description,
+  ogType = 'website',
+  markdownHref,
+  noindex = false,
+} = Astro.props;
+
+const origin = Astro.site ?? new URL(siteMeta.url);
+const canonical = new URL(Astro.url.pathname, origin).href;
+const ogImage = new URL(siteMeta.ogImage, origin).href;
+const robots = noindex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large';
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${siteMeta.url}/#organization`,
+      name: siteMeta.name,
+      url: siteMeta.url,
+      logo: new URL('/apple-touch-icon.png', origin).href,
+      sameAs: [siteMeta.repo, siteMeta.npm],
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${siteMeta.url}/#website`,
+      name: siteMeta.name,
+      url: siteMeta.url,
+      description: siteMeta.description,
+      inLanguage: 'en',
+      publisher: { '@id': `${siteMeta.url}/#organization` },
+    },
+    {
+      '@type': 'SoftwareApplication',
+      '@id': `${siteMeta.url}/#app`,
+      name: 'jevlogs',
+      alternateName: siteMeta.name,
+      applicationCategory: 'DeveloperApplication',
+      operatingSystem: 'Node.js 22+',
+      softwareVersion: siteMeta.version,
+      license: 'https://github.com/reachjalil/jevlogs/blob/main/LICENSE',
+      url: siteMeta.url,
+      downloadUrl: siteMeta.npm,
+      installUrl: siteMeta.npm,
+      isAccessibleForFree: true,
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      author: { '@id': `${siteMeta.url}/#organization` },
+    },
+    {
+      '@type': 'SoftwareSourceCode',
+      '@id': `${siteMeta.repo}#code`,
+      name: 'jevlogs',
+      codeRepository: siteMeta.repo,
+      programmingLanguage: 'TypeScript',
+      runtimePlatform: 'Node.js',
+      license: 'https://opensource.org/licenses/MIT',
+    },
+    {
+      '@type': ogType === 'article' ? 'TechArticle' : 'WebPage',
+      '@id': `${canonical}#page`,
+      url: canonical,
+      name: title,
+      description,
+      isPartOf: { '@id': `${siteMeta.url}/#website` },
+      about: { '@id': `${siteMeta.url}/#app` },
+      inLanguage: 'en',
+      primaryImageOfPage: {
+        '@type': 'ImageObject',
+        url: ogImage,
+        width: siteMeta.ogWidth,
+        height: siteMeta.ogHeight,
+      },
+    },
+  ],
+};
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="application-name" content={siteMeta.name} />
+    <meta name="author" content={siteMeta.name} />
+    <meta name="theme-color" content={siteMeta.themeColor} />
+    <meta name="color-scheme" content="light" />
+    <meta name="robots" content={robots} />
+    <meta name="googlebot" content={robots} />
+    <meta
+      name="keywords"
+      content="Jev Logs, OpenTelemetry, log triage, TypeSafe Jev, Vercel AI SDK, LLM observability, TypeScript, open source"
+    />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
+    <link rel="license" href="https://github.com/reachjalil/jevlogs/blob/main/LICENSE" />
+    <link rel="author" href={siteMeta.repo} />
+    <link rel="describedby" href="/llms.txt" title="llms.txt" />
+    {markdownHref && (
+      <link rel="alternate" type="text/markdown" title="Markdown" href={markdownHref} />
+    )}
+
+    <meta property="og:site_name" content={siteMeta.name} />
+    <meta property="og:locale" content={siteMeta.locale} />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:url" content={ogImage} />
+    <meta property="og:image:secure_url" content={ogImage} />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content={String(siteMeta.ogWidth)} />
+    <meta property="og:image:height" content={String(siteMeta.ogHeight)} />
+    <meta property="og:image:alt" content={siteMeta.ogAlt} />
+    {ogType === 'article' && (
+      <>
+        <meta property="article:section" content="Documentation" />
+        <meta property="article:published_time" content="2026-09-16" />
+        <meta property="article:modified_time" content="2026-09-17" />
+        <meta property="article:author" content={siteMeta.name} />
+      </>
+    )}
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:image:alt" content={siteMeta.ogAlt} />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,560&family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&display=swap"
+      rel="stylesheet"
+    />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd)}></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <Header />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>

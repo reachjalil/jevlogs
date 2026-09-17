@@ -1,0 +1,23 @@
+---
+import Logo from './Logo.astro';
+const repo = 'https://github.com/reachjalil/jevlogs';
+const path = Astro.url.pathname;
+const onGuide = path.startsWith('/guide');
+---
+<header class="site-header">
+  <div class="wrap header">
+    <a class="brand" href="/" aria-label="Jev Logs home">
+      <span class="mark" aria-hidden="true">
+        <Logo />
+      </span>
+      jev logs
+    </a>
+    <nav aria-label="Main navigation">
+      <a href="/#sort">Sort logs</a>
+      <a class="nav-optional" href="/#how">How it works</a>
+      <a href="/#savings">Savings</a>
+      <a href="/guide/" aria-current={onGuide ? 'page' : undefined}>Guide</a>
+    </nav>
+    <a class="github" href={repo} rel="noopener noreferrer">GitHub ↗</a>
+  </div>
+</header>

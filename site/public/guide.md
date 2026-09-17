@@ -1,0 +1,460 @@
+# What you can do with Jev Logs
+
+Jev Logs is a small decision layer before expensive LLM log analysis. Use it from a terminal, in a TypeScript job, or inside your existing Node.js OpenTelemetry Logs pipeline. It assigns diagnostic value, urgency, and an analysis recommendation. Your existing system remains responsible for storing logs, delivering events, and running deeper analysis.
+
+**Current release: 0.3.0, public preview.** The SDK and CLI are on npm. The default demo is offline; live evaluation needs `AI_GATEWAY_API_KEY` and Jev access through Vercel AI Gateway. Production accuracy and savings have not been independently validated for this project.
+
+## Start a local OpenTelemetry receiver with one config
+
+Requires Node.js 22+. Install `npm install jevlogs`, or use `npx` directly. Add **`jevlogs.config.json` at your project root**:
+
+```json
+{
+  "envFile": ".env",
+  "port": 4318,
+  "retainBelow": 0.1,
+  "timeoutMs": 2000,
+  "maxInputChars": 8000
+}
+```
+
+Create `.env` beside it:
+
+```dotenv
+AI_GATEWAY_API_KEY=your-vercel-ai-gateway-key
+```
+
+Add `.env` to your `.gitignore`. Commit the JSON config, not your key. Create a key in your [Vercel AI Gateway dashboard](https://vercel.com/docs/ai-gateway/authentication-and-byok). This is **your Gateway key**, not an OpenAI key or a Jev Logs account. Provider usage is charged to your Gateway account. The AI SDK reads it server-side to authenticate Jev requests. Applications sending OTLP logs do not need this key. The website never receives it.
+
+Run from that project root:
+
+```sh
+npx jevlogs@latest --live
+```
+
+The receiver listens at **`http://127.0.0.1:4318/v1/logs`** and stays running until Ctrl+C. `GET /health` checks the receiver, not model availability. It prints one JSON decision per record to stdout, with available trace/span IDs and timestamp. It does not print raw log bodies or store your logs. Keep your existing archive/export pipeline.
+
+The default config is read from your current working directory. Use `--config ./config/jevlogs.json` for another location; `envFile` resolves relative to that config. Existing environment variables take precedence over `.env`. `--port 4320` overrides the config port. All settings are optional; you can omit `envFile` when your shell or secret manager already supplies `AI_GATEWAY_API_KEY`. Unknown configuration keys fail clearly. Never put an API key directly in the JSON.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `envFile` | None | Local dotenv file to load; explicit missing files fail startup |
+| `port` | `4318` | Local HTTP receiver port |
+| `retainBelow` | `0.1` | Actionable-probability threshold, from 0 through 0.5; low value and low priority are also required to retain |
+| `timeoutMs` | `2000` | Per-record model timeout; failures remain eligible for analysis |
+| `maxInputChars` | `8000` | Maximum serialized model input; oversized input remains eligible for analysis |
+| `forwardUrl` | None | OTLP HTTP/JSON logs endpoint that receives the annotated batch, for example your Collector at `http://127.0.0.1:4320/v1/logs` |
+| `forwardMode` | `annotate` | `annotate` forwards every record with `jev.*` attributes; `analysis-only` forwards only records routed to analysis |
+| `rules` | `[]` | Regular expressions tested against the redacted body before any model call; first match wins |
+| `cacheSize` | `1000` | Decisions kept in memory, keyed by a hash of the redacted model input; `0` disables the cache |
+| `cacheTtlMs` | `300000` | How long a cached decision stays valid |
+
+### Send logs from your application
+
+Use **OTLP HTTP/JSON**, not gRPC or binary protobuf. With the JavaScript JSON exporter:
+
+```sh
+npm install @opentelemetry/sdk-logs@0.222.0 @opentelemetry/exporter-logs-otlp-http@0.222.0
+```
+
+```ts
+import { LoggerProvider, BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
+import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
+
+const provider = new LoggerProvider({
+  processors: [new BatchLogRecordProcessor({
+    exporter: new OTLPLogExporter({
+      url: 'http://127.0.0.1:4318/v1/logs',
+    }),
+    maxExportBatchSize: 16,
+    exportTimeoutMillis: 15000,
+  })],
+});
+provider.getLogger('my-app').emit({
+  body: 'GET /health returned 200',
+  severityNumber: 9,
+});
+await provider.shutdown(); // Flush once when your application exits.
+```
+
+For SDKs that support HTTP/JSON configuration through environment variables:
+
+```dotenv
+OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:4318/v1/logs
+OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json
+```
+
+Environment variables configure an installed exporter; they do not instrument your application automatically. Check your language SDK supports this protocol. Keep batches at 16 records for the default timeouts. The receiver accepts uncompressed JSON only, up to 1 MiB and 100 records per request, with four evaluations in flight. Concurrent batches receive HTTP 503 with `Retry-After`; let a retry-capable exporter handle backpressure. It binds to loopback only. This preview is a local development receiver, not a remote hosted collector.
+
+### Embed the same receiver in an npm application
+
+```ts
+import { startJevLogsServer, loadJevConfig } from 'jevlogs/server';
+
+const server = await startJevLogsServer({
+  ...await loadJevConfig(),
+  async onLog({ resource, scope, logRecord, decision }) {
+    // Original OTLP fields are preserved. Connect your own durable sink here.
+    // decision.route tells you whether deeper LLM analysis is recommended.
+    console.log(JSON.stringify({ decision, traceId: logRecord.traceId }));
+  },
+});
+console.log(server.url);
+// During application shutdown: await server.close();
+```
+
+`onLog` is called for every record, including those marked `retain`. Redaction applies to model input; the callback receives the original record, so apply your own storage policy. HTTP success acknowledges callback completion, not durable storage. Callback failures return OTLP partial-success counts; compliant clients do not retry rejected records in a partial-success response. Persist within your callback if delivery matters. Retried requests are not deduplicated.
+
+Only the body and severity go into model input, after the SDK's redaction. Errors and `jev.protected=true` records bypass inference. Resource attributes, scope and trace IDs remain available to your callback. Default redaction is a starting point, not a complete sensitive-data policy.
+
+For a one-time model demonstration instead of starting the receiver, run `npx jevlogs --live --sample`. File and stdin modes still work as finite batches.
+### Forward annotated logs to your collector
+
+Point your application at Jev Logs and Jev Logs at the collector you already run. Every record continues on with `jev.*` attributes attached; nothing is stored in between.
+
+```json
+{
+  "envFile": ".env",
+  "forwardUrl": "http://127.0.0.1:4320/v1/logs",
+  "forwardMode": "annotate",
+  "rules": [
+    { "name": "health", "match": "^GET /health", "route": "retain" }
+  ]
+}
+```
+
+```text
+your app ──OTLP JSON──▶ jevlogs :4318 ──annotated OTLP JSON──▶ collector :4320
+```
+
+Forwarding happens before the local decision output, so an upstream failure returns HTTP 503 with `Retry-After` and your exporter resends the batch. Authentication headers for the upstream come from `OTEL_EXPORTER_OTLP_LOGS_HEADERS` or `OTEL_EXPORTER_OTLP_HEADERS` in the receiver's environment, using the standard `key=value,key=value` syntax. `analysis-only` mode forwards just the records routed to analysis, which is how you feed a separate LLM-analysis pipeline without touching your archive.
+
+Rules run after protection and redaction and before the cache or the model, so known noise costs nothing. A `retain` rule produces `value: 0`, `priority: low`; an `analyze` rule produces the conservative fallback. ERROR/FATAL and `jev.protected` records are never affected by rules. Identical redacted inputs share one model call and are then served from an in-memory cache, marked `cached: true`. `GET /stats` reports requests, records, forwarded batches, cache hits, rule hits, model latency and reported input tokens.
+
+The embedded server accepts the same options: `forwardUrl`, `forwardMode`, `forwardHeaders`, `forwardTimeoutMs`, `rules`, `cache`, `concurrency` (model evaluations in flight, default 4) and `maxRequests` (requests accepted at once, default 8). `onLog` is optional when `forwardUrl` is set. `startJevLogsServer()` returns `stats()` alongside `url` and `close()`.
+
+
+## Choose your starting point
+
+| You want to… | Start here | What you get |
+| --- | --- | --- |
+| Understand the workflow in seconds | `npx jevlogs` | Four fixed sample decisions, without a key or inference |
+| Try the actual model | `npx jevlogs --live --sample` | Jev evaluates the included sample logs; errors bypass the model |
+| Inspect a log file | `--live --file app.log` | A bounded, one-time triage of text or JSONL |
+| Feed decisions into a script | `--live --stdin --json` | One decision per input record on stdout |
+| Watch a live stream | `--live --stdin --follow --json` | Each line evaluated as it arrives until EOF |
+| Put triage in front of your collector | `forwardUrl` in `jevlogs.config.json` | Annotated OTLP records forwarded; noise handled by rules and cache |
+| Add triage to an existing queue | `createJevLogs().triage()` | A typed decision your application can act on |
+| See scores in your observability backend | `JevLogExporter`, `annotate` mode | Every record exported with `jev.*` annotations |
+| Reduce calls to your analysis model | A separate `analysis-only` branch | Confidently low-value records skip that branch |
+| Estimate whether triage pays off | `estimateSavings()` or the website calculator | An estimate including Jev overhead and downstream LLM costs |
+
+## 1. Try the CLI
+
+```sh
+npx jevlogs
+npx jevlogs --help
+```
+
+The default command uses fixed answers for four sample records. It does not call Jev. It demonstrates the SDK's routing policy and output format.
+
+For actual inference, set your Gateway key through your shell's environment or secret manager, then run:
+
+```sh
+npx jevlogs --live --sample
+npx jevlogs --live --file ./app.log --limit 20
+cat ./app.jsonl | npx jevlogs --live --stdin --json > decisions.jsonl
+tail -f ./app.log | npx jevlogs --live --stdin --follow --json
+```
+
+The key is read from `AI_GATEWAY_API_KEY`; there is no API-key command-line flag. Live mode sends redacted log bodies and severity to Vercel AI Gateway / TypeSafe and incurs provider charges. Your input file is never modified.
+
+### Accepted input
+
+Plain text: one non-empty line per record. Recognized severity words include ERROR, FATAL, CRITICAL, WARN, INFO, DEBUG, and TRACE.
+
+```text
+INFO GET /health returned 200
+WARN Database connection pool approaching capacity
+ERROR Payment capture failed
+```
+
+JSONL: one JSON value per line. Objects can use these fields:
+
+```json
+{"message":"GET /health returned 200","level":"INFO"}
+{"body":"Connection pool at 94% for five minutes","severityText":"WARN"}
+{"body":"Payment capture failed","severityNumber":17}
+{"body":"Audit: administrator role changed","protected":true}
+```
+
+`body` takes precedence over `message`; `severityText` takes precedence over `level`. If neither body field exists, the whole object becomes the body. Arbitrary nested data inside that body may therefore be sent for evaluation. This is not an OTLP JSON decoder. Numeric `level` conventions from other loggers are not automatically translated to OTel severity; normalize them first.
+
+### CLI reference
+
+| Option | Behavior |
+| --- | --- |
+| No arguments / `--demo` | Offline sample demo; custom files are not accepted |
+| `--live` | Start the local OTLP HTTP/JSON receiver |
+| `--sample` | With `--live`, evaluate sample records and exit |
+| `--config <path>` | Override the root `jevlogs.config.json` location |
+| `--port <number>` | Override the local receiver port |
+| `--file <path>` | Read a text or JSONL file; requires `--live` |
+| `--stdin` | Read stdin until EOF; requires `--live` |
+| `--follow` | With `--stdin`: evaluate each line as it arrives, no record limit, four evaluations in flight |
+| `--limit <1–100>` | Maximum records processed; default 20; ignored with `--follow` |
+| `--json` | JSONL decisions on stdout, summaries on stderr |
+| `--help`, `-h` | Print usage |
+| `--version`, `-v` | Print package version |
+
+Total input is limited to 1 MiB. Each selected input line is limited to 8,000 characters; the SDK also caps its serialized model state at 8,000 characters. More than the selected record limit triggers a stderr notice and only the first records are processed. Without `--follow`, file/stdin mode is a finite batch: stdin is consumed until EOF before triage starts. With `--follow`, each non-empty line is evaluated as it arrives, output order follows completion, oversized or malformed lines are reported on stderr and skipped, and the summary prints at EOF.
+
+`--json` omits raw bodies. Example from the **offline demo**:
+
+```json
+{"line":1,"mode":"demo","value":0,"priority":"low","actionableProbability":0.01,"route":"retain","reason":"model","cached":false}
+```
+
+`line` is the one-based processed record index after blank lines are removed, not necessarily the physical file line number. `mode` distinguishes sample answers from live mode. In live mode, `reason: "protected"` means the local protection rule ran without calling the model.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Command completed without unavailable evaluations; this can include protected records or an offline demo |
+| `1` | Invalid arguments, missing key, unreadable input, or another command error |
+| `2` | One or more evaluations unavailable; decisions still emitted and affected records kept eligible for analysis |
+
+For automation, check both the exit code and each decision's `reason`. Redirecting stdout to a file does not hide the stderr summary.
+
+## 2. Use the TypeScript API
+
+Requires Node.js 22 or newer.
+
+```sh
+npm install jevlogs
+```
+
+```ts
+import { createJevLogs } from 'jevlogs';
+
+const jev = createJevLogs({
+  retainBelow: 0.1,
+  timeoutMs: 2000,
+  maxInputChars: 8000,
+});
+
+const decision = await jev.triage({
+  body: 'Database connection pool at 94% capacity for five minutes',
+  severityText: 'WARN',
+});
+
+console.log(decision.value, decision.priority, decision.route);
+// Your consumer decides whether to enqueue deeper analysis.
+```
+
+The standalone API has no OpenTelemetry runtime dependency. The package's exported declarations also reference OpenTelemetry types for its exporter; TypeScript consumers that check dependency declarations may need the OTel peer installed even when using only the standalone API.
+
+### What a decision means
+
+| Field | Meaning |
+| --- | --- |
+| `value` | Five-level diagnostic rubric scaled to 0–100; not dollars or confidence |
+| `priority` | `critical`, `high`, `normal`, or `low` |
+| `route` | `analyze` for deeper analysis; `retain` for keeping in your archive without that analysis |
+| `actionableProbability` | Boolean probability that deeper investigation would be useful; `null` when there is no model answer |
+| `reason` | `model`, `protected`, `uncertain`, `unavailable`, or `rule` |
+| `cached` | `true` when served from the local decision cache or shared with an identical in-flight evaluation |
+| `rule` | Name of the matching configured rule when `reason` is `rule` |
+
+The rubric describes no useful signal, low diagnostic detail, moderate context, actionable failure evidence, and incident-defining evidence. Jev's score is mapped by multiplying it by 25. A fallback value of 100 is a conservative policy value, not an inferred judgment or certainty.
+
+Only records satisfying **all three** conditions may receive `retain`:
+
+1. Priority is `low`.
+2. Value is at most 25.
+3. Actionable probability is strictly less than `retainBelow` (default 0.1).
+
+All other records receive `analyze`. A record recommended for analysis can still carry `reason: "uncertain"`; the reason is not a separate filter.
+
+### Configuration
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `retainBelow` | `0.1` | Probability threshold, from 0 to 0.5; 0 disables bypass |
+| `timeoutMs` | `2000` | Per-evaluation deadline in milliseconds |
+| `maxInputChars` | `8000` | Maximum serialized state length before and after redaction |
+| `redact` | `redactCommonSecrets` | Synchronous text transform before model transmission |
+| `evaluator` | Jev through AI Gateway | Injectable evaluator for tests or custom integrations |
+| `rules` | `[]` | `{ name?, match, flags?, route }` tested against the redacted body after protection, before cache and model; first match wins |
+| `cache` | 1,000 entries, 5 minutes | `{ maxEntries, ttlMs }` or `false`; keyed by a SHA-256 of the redacted model input; failures are never cached |
+
+Timeouts, malformed answers, serialization errors, oversized state, redactor failures, and provider failures produce `reason: "unavailable"` with `route: "analyze"`. `stats()` returns counters for decisions, model calls, cache hits, rule hits, protected and unavailable records, routes, model latency, and provider-reported input tokens. The SDK does not expose provider error details in the returned decision and performs no automatic retries. Changing the evaluator replaces the model integration; it does not change the conservative routing rules.
+
+## 3. Annotate your OpenTelemetry logs
+
+```sh
+npm install jevlogs @opentelemetry/sdk-logs@0.222.0
+```
+
+```ts
+import {
+  LoggerProvider,
+  BatchLogRecordProcessor,
+  ConsoleLogRecordExporter,
+} from '@opentelemetry/sdk-logs';
+import { JevLogExporter } from 'jevlogs';
+
+const provider = new LoggerProvider({
+  processors: [new BatchLogRecordProcessor({
+    exporter: new JevLogExporter({
+      exporter: new ConsoleLogRecordExporter(), // replace with your exporter
+      mode: 'annotate',
+    }),
+    maxExportBatchSize: 16,
+    exportTimeoutMillis: 15_000,
+  })],
+});
+
+provider.getLogger('checkout').emit({
+  body: 'Payment capture failed',
+  severityNumber: 17,
+});
+
+await provider.shutdown(); // at application shutdown, not per record
+```
+
+Replace the console exporter with your existing compatible `LogRecordExporter`, such as an OTLP exporter. Instrumentation must already emit OTel log records; Jev Logs does not automatically capture every `console.log` or instrument every logger.
+
+The wrapper exports a new record preserving the original body, timestamps, severity, resource, scope, event name, and span context. It adds:
+
+| Attribute | Value |
+| --- | --- |
+| `jev.value` | Diagnostic score or conservative fallback value |
+| `jev.priority` | Priority string |
+| `jev.route` | `analyze` or `retain` |
+| `jev.reason` | Decision reason |
+| `jev.actionable_probability` | Probability when a model answer exists; otherwise omitted on ordinary input |
+| `jev.cached` | `true` only when the decision came from the cache or a shared in-flight evaluation |
+| `jev.rule` | Matching rule name, only when a rule decided |
+
+Reserve `jev.*` for this integration. Default mode is `annotate`: every record is exported, so annotation alone does not reduce downstream model calls or storage charges.
+
+## 4. Add a separate analysis branch
+
+Keep your archive exporter on its own processor. Add Jev only to the branch that feeds your expensive LLM analysis queue:
+
+```ts
+import { LoggerProvider, BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
+import type { LogRecordExporter } from '@opentelemetry/sdk-logs';
+import { JevLogExporter } from 'jevlogs';
+
+export function createPipeline(
+  archiveExporter: LogRecordExporter,
+  analysisQueueExporter: LogRecordExporter,
+) {
+  return new LoggerProvider({
+    processors: [
+      new BatchLogRecordProcessor({ exporter: archiveExporter }),
+      new BatchLogRecordProcessor({
+        exporter: new JevLogExporter({
+          exporter: analysisQueueExporter,
+          mode: 'analysis-only',
+          concurrency: 4,
+          retainBelow: 0.1,
+        }),
+        maxExportBatchSize: 16,
+        exportTimeoutMillis: 15_000,
+      }),
+    ],
+  });
+}
+```
+
+The two exporter arguments are your application's destinations, not built-in Jev Logs services. Use independent exporter instances. This package supplies neither a persistent queue nor a downstream reasoning-model client. All records are offered to the archive branch; actual delivery still depends on your exporter and backend.
+
+Concurrency defaults to 4 and accepts integers 1–32. Concurrent calls to the wrapper while it is classifying bypass scoring and forward those records unchanged. Your analysis consumer should treat missing decisions as eligible for analysis. No records are deleted from the archive by this integration.
+
+## 5. Protect records and redact context
+
+The local policy automatically protects OTel severity numbers 17 and above, and severity text ERROR, FATAL, or CRITICAL. It does not use model inference for those records. Mark additional records explicitly:
+
+```ts
+// Standalone API or JSONL CLI input:
+await jev.triage({ body: 'Audit event', protected: true });
+
+// OpenTelemetry emission:
+provider.getLogger('audit').emit({
+  body: 'Administrator role changed',
+  attributes: { 'jev.protected': true },
+});
+```
+
+For domain-specific redaction, compose your rule with the default redactor:
+
+```ts
+import { createJevLogs, redactCommonSecrets } from 'jevlogs';
+
+const jev = createJevLogs({
+  redact: text => redactCommonSecrets(text)
+    .replace(/customer_[A-Za-z0-9]+/g, '[CUSTOMER_ID]'),
+});
+```
+
+The default removes common labeled secrets, Bearer tokens, and email addresses. It is not complete PII detection. Only body and severity enter the standard model request; arbitrary OTel attributes are not included. Sensitive data embedded in a body still requires redaction. This hook changes the model-bound text, **not** the original log forwarded to your exporter. Apply separate redaction to your archive if necessary.
+
+Gateway requests ask for zero data retention. Check the applicable provider account policies. Keep credentials server-side. Jev's structured outputs can still be wrong, and logs can contain adversarial instructions; protection rules are not a complete security classifier.
+
+## 6. Estimate costs before routing
+
+```ts
+import { estimateSavings } from 'jevlogs';
+
+const estimate = estimateSavings({
+  logs: 1_000_000,
+  tokensPerLog: 300,
+  outputTokensPerLog: 50,
+  llmInputPerMillion: 2,
+  llmOutputPerMillion: 12,
+  retainedFraction: 0.1, // fraction STILL sent for deeper LLM analysis
+  jevInputPerMillion: 0.042,
+  questionTokensPerLog: 400,
+});
+console.log(estimate);
+// baseline: 1200, triage: 29.4, withJev: 149.4,
+// savings: 1050.6, percent: approximately 87.55
+```
+
+Despite the parameter name, `retainedFraction` means the fraction retained **for downstream LLM analysis**, not the fraction archived. Include uncertainty, protected records, and failures in that fraction. The estimator conservatively budgets Jev triage for all input logs even though protected records bypass it in the SDK.
+
+Question overhead defaults to an estimated 400 tokens per log, not measured usage. The estimate assumes equal average log sizes and excludes storage, ingestion, hosting, retries, prompt caching, and discounts. At 100% analyzed, Jev adds cost. Compare actual bills and incident recall before claiming savings.
+
+Pricing references, checked September 16, 2026: [TypeSafe's launch announcement](https://typesafe.ai/blog/introducing-system-one-models-and-jev) lists $0.042/M input and free output; [Vercel Gateway](https://vercel.com/ai-gateway/models/jev) displays $0.04/M. The [Vercel announcement](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway) documents the experimental evaluate API used here. Provider benchmarks are not Jev Logs benchmarks.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| Default command seems to return the same answers | It is the offline sample demo. Use `--live --sample` for actual Jev inference. |
+| Live CLI says key missing | Set `AI_GATEWAY_API_KEY` in the same shell/process; do not paste it into logs or issues. |
+| `reason: unavailable`, exit 2 | Check model access, connectivity, serialized input size, and timeout. The CLI does not reveal the provider's underlying error. |
+| Every ERROR gets value 100 | The local protection rule bypasses the model and conservatively selects analysis. |
+| All logs still appear in the backend | Expected in annotation mode. Inspect `jev.*` attributes or use a separate analysis branch. |
+| Some logs have no annotations | Overlapping export calls are forwarded unchanged. Treat missing decisions as analyze. |
+| `tail -f` never returns results | Without `--follow` the CLI waits for EOF. Add `--follow` to evaluate lines as they arrive. |
+| Receiver answers 503 | Forwarding to `forwardUrl` failed, or more than `maxRequests` batches were in flight. Retry-capable exporters resend the batch. Check `GET /stats`. |
+| A noisy line still reaches the model | Rules match the redacted body text, not the whole JSON record; check the pattern and remember protected records bypass rules. |
+| Numeric logger levels do not protect errors | Normalize to OTel `severityNumber` or a string `severityText`; arbitrary logger numbering is not translated. |
+| A TypeScript declaration cannot resolve OTel | Install `@opentelemetry/sdk-logs@0.222.0`, which provides the exporter's referenced types. |
+
+## What this release does not include
+
+No hosted dashboard, log database, automatic logger instrumentation, Collector plugin, span or metric processing, durable queue, persistent cache, root-cause explanation, or built-in downstream LLM analysis. CLI output is a triage result, not a measured cost report. The model is hosted by TypeSafe; the SDK is the open-source component.
+
+## Suggested rollout
+
+1. Run the offline demo and then a small synthetic live sample.
+2. Annotate a bounded workload while retaining your existing archive and analysis behavior.
+3. Compare routing with labeled incident logs. Measure false negatives, uncertainty, latency, and actual cost.
+4. Enable filtering on a separate analysis branch only after choosing acceptable thresholds.
+5. Periodically review a sample of bypassed events and revisit the rubric for your workload.
+
+The current rubric is built into the default evaluator; domain-specific questions require supplying a custom `evaluator`. This guide describes available functionality, not a guarantee of incident detection or savings.

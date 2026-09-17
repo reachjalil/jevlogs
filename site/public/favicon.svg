@@ -1,1 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#2448ff"/><text x="7" y="22" font-family="monospace" font-size="22" font-weight="bold" fill="white">j</text><path d="M19 23h7" stroke="#b8c8ff" stroke-width="3"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Jev Logs">
+  <rect width="32" height="32" rx="8" fill="#2448ff"/>
+  <rect x="11" y="9" width="10" height="1.8" rx="0.9" fill="#eef2ff"/>
+  <rect x="11" y="13.4" width="10" height="1.8" rx="0.9" fill="#eef2ff"/>
+  <rect x="11" y="17.8" width="7" height="1.8" rx="0.9" fill="#eef2ff"/>
+  <rect x="11" y="22.2" width="10" height="1.8" rx="0.9" fill="#eef2ff"/>
+</svg>

@@ -1,0 +1,23 @@
+{
+  "name": "Jev Logs",
+  "short_name": "jevlogs",
+  "description": "Open-source TypeScript log triage with Jev and OpenTelemetry. Keep your logs. Spend on the signal.",
+  "start_url": "/",
+  "id": "/",
+  "display": "browser",
+  "lang": "en",
+  "background_color": "#fbfaf5",
+  "theme_color": "#2448ff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "180x180"
+    }
+  ]
+}

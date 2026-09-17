@@ -1,5 +1,6 @@
 ---
-import '../styles/global.css';
+import Base from '../layouts/Base.astro';
+
 const repo = 'https://github.com/reachjalil/jevlogs';
 const snippet = `import { JevLogExporter } from 'jevlogs';
 import { BatchLogRecordProcessor } from
@@ -11,65 +12,511 @@ const processor = new BatchLogRecordProcessor({
   })
 });
 // Every log kept. Value + priority attached.`;
+
+const logs = [
+  {
+    id: 'health',
+    severity: 'INFO',
+    title: 'GET /health → 200',
+    detail: 'api-gateway · routine heartbeat',
+    route: 'retain',
+    value: 0,
+  },
+  {
+    id: 'cache',
+    severity: 'DEBUG',
+    title: 'Cache hit: product:482',
+    detail: 'catalog · expected operation',
+    route: 'retain',
+    value: 25,
+  },
+  {
+    id: 'pay',
+    severity: 'ERROR',
+    title: 'Payment capture failed',
+    detail: 'checkout · protected by severity',
+    route: 'analyze',
+    value: 100,
+  },
+  {
+    id: 'pool',
+    severity: 'WARN',
+    title: 'Connection pool near capacity',
+    detail: 'database · investigate degradation',
+    route: 'analyze',
+    value: 75,
+  },
+] as const;
+
+const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
 ---
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width"/><title>Jev Logs — Keep your logs. Spend on the signal.</title><meta name="description" content="Open-source TypeScript log triage with Jev, Vercel AI SDK, and OpenTelemetry. Score diagnostic value before expensive LLM analysis."/><meta property="og:title" content="Jev Logs — Spend on the signal."/><meta property="og:description" content="A tiny decision layer between your logs and your LLM bill. TypeScript. OpenTelemetry. MIT."/><link rel="icon" href="/favicon.svg"/></head>
-<body><a class="skip" href="#main">Skip to content</a>
-<header class="wrap header"><a class="brand" href="/" aria-label="Jev Logs home"><span class="mark">j_</span> jev logs</a><nav aria-label="Main navigation"><a href="#use-cases">Use cases</a><a href="#savings">Savings</a><a href="/guide/">Guide</a></nav><a class="github" href={repo}>GitHub ↗</a></header>
-<main id="main">
-<section class="hero wrap"><div class="wordmark" aria-hidden="true">jev logs<span>_</span></div><div class="hero-grid"><div class="hero-copy"><p class="eyebrow">OPEN SOURCE · OPENTELEMETRY · TYPESCRIPT</p><h1>Keep your logs.<br/>Spend on<br/><em>the signal.</em></h1><p class="lead">Your LLM doesn’t need every health check.<br/>Let Jev find the logs worth thinking about.</p><div class="actions"><a class="button" href="/guide/">Start building <span>↗</span></a><a class="text-link" href="#savings">Calculate your savings ↓</a></div><a class="savings-proof" href="#savings"><strong>87.1% lower modeled LLM spend</strong><span>$1,000 → $129.40 / month in our 1M-log example.<br/>Assumes 10% need deeper analysis. Explore the math ↓</span></a><p class="launch-note"><code>npx jevlogs</code> — try the offline demo</p><p class="launch-note">v0.2.0 · MIT licensed · npm install jevlogs</p></div>
-<div class="demo"><div class="demo-top"><span><span class="dot"></span> log pipeline</span><span class="badge">ILLUSTRATIVE DEMO</span></div><div class="pipeline"><span>OpenTelemetry</span><span>→</span><strong>Jev</strong><span>→</span><span>LLM analysis</span></div><div class="demo-heading"><span>INCOMING EVENT</span><span>VALUE / 100</span></div><div class="log-row" data-value="0" data-route="Retain only"><div><span class="severity">INFO</span><code>GET /health → 200</code><small>api-gateway · routine heartbeat</small></div><span class="score">—</span></div><div class="log-row" data-value="25" data-route="Retain only"><div><span class="severity">DEBUG</span><code>Cache hit: product:482</code><small>catalog · expected operation</small></div><span class="score">—</span></div><div class="log-row important" data-value="100" data-route="Analyze"><div><span class="severity error">ERROR</span><code>Payment capture failed</code><small>checkout · protected by severity</small></div><span class="score">—</span></div><div class="log-row" data-value="75" data-route="Analyze"><div><span class="severity warn">WARN</span><code>Connection pool near capacity</code><small>database · investigate degradation</small></div><span class="score">—</span></div><div class="demo-bottom"><p id="demo-status" aria-live="polite">4 logs preserved. Find what deserves analysis.</p><button id="run-demo" type="button">Run demo ↗</button></div></div></div></section>
-<div class="wrap integrations"><span class="micro">FITS YOUR EXISTING STACK</span><strong>OpenTelemetry</strong><span>+</span><strong>Jev by TypeSafe</strong><span>+</span><strong>Vercel AI SDK</strong><span class="end-note">Your exporters. Your infrastructure.</span></div>
-<section id="how" class="wrap section"><div class="section-heading"><p class="eyebrow">01 / A SMALLER FIRST DECISION</p><h2>Think less about noise.<br/><em>Learn more from failures.</em></h2><p>Put a fast decision model before your reasoning model. Keep your observability pipeline, and choose what deserves a deeper look.</p></div><div class="features"><article><span class="number">01</span><h3>Give every log a value.</h3><p>Jev grades diagnostic value on a 0–100 rubric, assigns urgency, and estimates whether further investigation is useful.</p></article><article><span class="number">02</span><h3>Keep the uncertain ones.</h3><p>Only confidently low-value events can skip analysis. Errors and protected records always pass through. A timeout preserves the record.</p></article><article><span class="number">03</span><h3>Make fewer expensive calls.</h3><p>Annotate first. Then enable routing on a separate LLM branch while your existing telemetry archive keeps everything.</p></article></div><div class="launch-story"><img src="/images/introducing-jevlogs.png" alt="Introducing Jev Logs: our relaxed robot mascot holding a blue log card. jevlogs.com" width="1024" height="1024" loading="lazy"/><div><p class="eyebrow">ONE SMALL DECISION BEFORE A BIGGER BILL</p><h3>How Jev Logs uses Jev</h3><p>The TypeScript exporter sends a redacted copy of the log body and severity through the Vercel AI SDK. One Jev evaluation asks three questions: diagnostic value, priority, and whether investigation is actionable.</p><p>The SDK maps those answers into an analysis recommendation. ERROR/FATAL and protected records bypass evaluation and stay eligible for analysis. Uncertain decisions and failures also pass through.</p><p>Your archive remains on its own branch. Only confidently low-value records skip the analysis branch. You connect the downstream LLM; Jev Logs supplies the routing decision.</p><a class="text-link" href="/guide/">See the OpenTelemetry integration ↗</a></div></div></section>
+<Base
+  title="Jev Logs — Keep your logs. Spend on the signal."
+  description="Open-source TypeScript log triage with Jev, Vercel AI SDK, and OpenTelemetry. Score diagnostic value before expensive LLM analysis."
+  markdownHref="/index.md"
+>
+  <section class="hero wrap">
+    <div class="hero-copy">
+      <p class="eyebrow">Open source · OpenTelemetry · TypeScript</p>
+      <h1>Keep your logs.<br />Spend on <em>the signal.</em></h1>
+      <p class="lead">
+        Meet Jev: a tiny robot with headphones and a strong opinion about noise.
+        Your LLM doesn’t need every health check. Let Jev find the logs worth thinking about.
+      </p>
+      <div class="actions">
+        <a class="button" href="/guide/">Start building <span>↗</span></a>
+        <a class="text-link" href="#sort">Sort a pile with Jev ↓</a>
+      </div>
+      <div class="launch-row">
+        <button class="npx" id="copy-npx" type="button" aria-label="Copy npx jevlogs">
+          <span class="npx-prompt">$</span>
+          <code>npx jevlogs</code>
+          <span class="npx-copy">copy</span>
+        </button>
+        <p class="launch-note">v0.3.0 · MIT licensed · npm install jevlogs</p>
+      </div>
+    </div>
+    <figure class="hero-art">
+      <img
+        src="/jev.jpg"
+        width="1300"
+        height="722"
+        alt="Jev, a relaxed ivory robot in cobalt headphones, sorting log slips into a gray background box and a blue signal box."
+        fetchpriority="high"
+      />
+      <figcaption>
+        Every log is kept. Background stays cheap. Signal gets the thinking.
+      </figcaption>
+    </figure>
+  </section>
 
-<section id="use-cases" class="wrap section capabilities">
-  <div class="section-heading"><p class="eyebrow">WHAT YOU CAN DO TODAY</p><h2>From a local log file<br/><em>to your production pipeline.</em></h2><p>Start in the terminal, add a decision to your application, or enrich the OpenTelemetry logs you already collect. One npm package, three entry points.</p></div>
-  <div class="features">
-    <article><span class="number">TERMINAL</span><h3>Try it in seconds.</h3><p>Run <code>npx jevlogs</code> for an offline walkthrough. Add <code>--live --sample</code> and your Gateway key to evaluate the sample logs with real Jev.</p><a class="capability-link" href="/guide/#1-try-the-cli">CLI quick start ↗</a></article>
-    <article><span class="number">TEXT + JSONL</span><h3>Inspect a log snapshot.</h3><p>Read a file or pipe finite input through stdin. Get scores and priorities in the terminal, or JSONL decisions for your scripts. Your original file stays intact.</p><a class="capability-link" href="/guide/#accepted-input">Input formats ↗</a></article>
-    <article><span class="number">TYPESCRIPT</span><h3>Prioritize your queue.</h3><p>Call <code>triage()</code> before deeper analysis. Your application gets value, priority, probability, and a routing recommendation to act on.</p><a class="capability-link" href="/guide/#2-use-the-typescript-api">Standalone API ↗</a></article>
-    <article><span class="number">OPENTELEMETRY</span><h3>See signal in your backend.</h3><p>Wrap a compatible exporter to add <code>jev.*</code> attributes. Keep every record and explore the recommendations in your existing observability tools.</p><a class="capability-link" href="/guide/#3-annotate-your-opentelemetry-logs">Annotation setup ↗</a></article>
-    <article><span class="number">SELECTIVE ANALYSIS</span><h3>Keep an archive. Filter a branch.</h3><p>Leave your archive on its own processor. Add Jev to a separate analysis queue so only confidently low-value records skip expensive reasoning.</p><a class="capability-link" href="/guide/#4-add-a-separate-analysis-branch">Two-branch example ↗</a></article>
-    <article><span class="number">CONTROL</span><h3>Set the rules for your data.</h3><p>Protect audit events, add your own redactor, and tune the bypass threshold. Provider failures and ambiguous decisions stay eligible for analysis.</p><a class="capability-link" href="/guide/#5-protect-records-and-redact-context">Protection and redaction ↗</a></article>
+  <div class="wrap integrations">
+    <span class="micro">Fits your existing stack</span>
+    <strong>OpenTelemetry</strong>
+    <span>+</span>
+    <strong>Jev by TypeSafe</strong>
+    <span>+</span>
+    <strong>Vercel AI SDK</strong>
+    <span class="end-note">Your exporters. Your infrastructure.</span>
   </div>
-</section>
-<section class="workflow-strip"><div class="wrap"><p class="eyebrow">YOUR FIRST FIVE MINUTES</p><div class="workflow-steps"><div><b>01 · Try</b><code>npx jevlogs</code><p>Offline samples. No key required.</p></div><div><b>02 · Evaluate</b><code>npx jevlogs --live --file app.log</code><p>Real Jev. Gateway key required.</p></div><div><b>03 · Integrate</b><code>npm install jevlogs</code><p>A typed decision in your own code.</p></div></div><p class="small">Live mode sends redacted bodies to Gateway / TypeSafe and incurs provider charges. File/stdin mode is a finite batch tool: 20 records by default, up to 100. It waits for EOF when reading stdin.</p></div></section>
-<section class="why"><div class="wrap why-grid"><div><p class="eyebrow">BUILT FOR DECISIONS, NOT PARAGRAPHS</p><h2>Why Jev?<br/><em>The math is different.</em></h2></div><div><div class="price"><strong>$0.042</strong><span>per million input tokens<br/>TypeSafe’s published launch price</span></div><p>Typed choices, rubric scores, and probabilities in one request. No generated explanation needed for a routing decision.</p><div class="why-details"><span><b>Parallel questions</b>Shared log context</span><span><b>Free output</b>At TypeSafe launch pricing</span><span><b>Explicit uncertainty</b>Keep ambiguous events</span></div><p class="small">Gateway lists $0.04/M; billing may differ. Jev is early access. Provider speed benchmarks are not Jev Logs benchmarks. Typed outputs can still make incorrect decisions. <a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev">Read TypeSafe’s announcement ↗</a></p></div></div></section>
-<section id="savings" class="wrap section"><div class="section-heading"><p class="eyebrow">02 / LESS NOISE. A SMALLER BILL.</p><h2>A smaller analysis bill.<br/><em>Every log still kept.</em></h2><p>A transparent estimate, not a benchmark. Adjust the fraction of logs still sent to your LLM, including errors, uncertain decisions, and failures.</p></div><p class="pricing-note">Example baseline: <a href="https://vercel.com/ai-gateway/models/gpt-4.1">GPT-4.1 at $2/M input and $8/M output</a>. Jev uses <a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev">TypeSafe’s $0.042/M input launch rate</a>. Prices checked September 16, 2026. The routing fraction and 400-token question overhead are assumptions; measure yours.</p><div class="calculator"><form id="cost-form"><label>Logs per month<input name="logs" type="number" min="0" max="1000000000000" value="1000000" required/></label><label>Input tokens per log<input name="tokensPerLog" type="number" min="0" value="300" required/></label><label>LLM input · $ / 1M tokens<input name="llmInputPerMillion" type="number" min="0" step="0.001" value="2" required/></label><label>LLM output · $ / 1M tokens<input name="llmOutputPerMillion" type="number" min="0" step="0.001" value="8" required/></label><label>Output tokens per log<input name="outputTokensPerLog" type="number" min="0" value="50" required/></label><label>Logs still analyzed · %<input name="retainedPercent" type="number" min="0" max="100" value="10" required/></label><label>Jev input · $ / 1M tokens<input name="jevInputPerMillion" type="number" min="0" step="0.001" value="0.042" required/></label><label>Jev question / context overhead · tokens<input name="questionTokensPerLog" type="number" min="0" value="400" required/></label></form><div class="estimate" aria-live="polite"><p class="micro">ESTIMATED MONTHLY SAVINGS</p><strong id="saved">$870.60</strong><span id="percent">87.1% less analysis spend</span><div class="cost-line"><span>Analyze everything</span><b id="baseline">$1,000.00</b></div><div class="bar baseline-bar"></div><div class="cost-line"><span>Jev + selected LLM calls</span><b id="with-jev">$129.40</b></div><div class="bar jev-bar" id="jev-bar"></div><p class="small">Includes Jev input and question overhead, plus selected LLM input and output. Excludes storage, ingestion, hosting, retries, discounts, and prompt caching. Assumes equal average log sizes; savings depend on your workload.</p></div></div><div class="scenarios"><h3>How much noise can you skip?</h3><p>Same 1M-log workload and GPT-4.1 rates. Jev triage adds $29.40; the rest depends on how many records still need analysis.</p><div class="table-scroll"><table><thead><tr><th>Logs still analyzed</th><th>Jev + analysis</th><th>Modeled reduction</th></tr></thead><tbody><tr><td>100%</td><td>$1,029.40</td><td>2.94% cost increase</td></tr><tr><td>50%</td><td>$529.40</td><td>47.06%</td></tr><tr><td>25%</td><td>$279.40</td><td>72.06%</td></tr><tr><td>10%</td><td>$129.40</td><td>87.06%</td></tr></tbody></table></div><p class="pricing-note">Already using a smaller model? At <a href="https://vercel.com/ai-gateway/models/gpt-4.1-mini">GPT-4.1 mini’s $0.40/M input and $1.60/M output</a>, the same 10% scenario is $200 → $49.40: a modeled 75.3% reduction. This compares costs, not accuracy. Annotation alone saves no analysis calls; enable filtering on your separate analysis branch after evaluating incident recall.</p></div></section>
-<section class="wrap section install"><div><p class="eyebrow">03 / SMALL INTEGRATION. REAL CONTROL.</p><h2>Your pipeline.<br/><em>One new layer.</em></h2><p>Install with npm install jevlogs. Try npx jevlogs for the offline demo, or add jevlogs.config.json and run npx jevlogs --live to start a local OpenTelemetry receiver. Send HTTP/JSON logs or wrap your existing exporter.</p><a class="button" href="/guide/">Read the quick start <span>↗</span></a></div><div class="code-panel"><div class="code-heading"><span>telemetry.ts</span><button type="button" id="copy-code">Copy</button></div><pre><code id="install-code">{snippet}</code></pre><p class="small code-note">Node.js 22+ · AI SDK 7.0.105 · OTel SDK Logs 0.222.0</p></div></section>
 
-<section class="wrap section faq" aria-labelledby="faq-heading">
-  <div class="section-heading"><p class="eyebrow">BEFORE YOU INTEGRATE</p><h2 id="faq-heading">Know what the first<br/><em>version can do.</em></h2></div>
-  <details><summary>Does installing Jev Logs automatically lower my bill?</summary><p>No. Annotation mode exports every record with extra attributes. Savings become possible when your consumer honors the routing recommendation, or when you enable a separate analysis-only branch. If every record still goes to an LLM, triage adds cost.</p></details>
-  <details><summary>What do value, priority, and probability mean?</summary><p>Value is a diagnostic rubric scaled to 0–100. Priority is low, normal, high, or critical. Actionable probability estimates whether deeper investigation would be useful. These are separate signals; the value is not dollars or confidence.</p></details>
-  <details><summary>Which records can skip deeper analysis?</summary><p>Only records with low priority, value at most 25, and actionable probability below 0.1 by default. Errors and explicitly protected records bypass the model and remain eligible for analysis. Uncertain or unavailable evaluations also stay on that path.</p></details>
-  <details><summary>Does it replace my log backend or run root-cause analysis?</summary><p>No. Keep your existing storage, instrumentation, exporters, and analysis model. This version provides triage decisions and an OpenTelemetry Logs exporter wrapper. It does not include a hosted dashboard, Collector plugin, durable queue, trace sampling, continuous CLI tailing, or root-cause explanations.</p></details>
-  <details><summary>What leaves my application?</summary><p>The standard evaluator sends the log body and severity after redaction. The default redactor covers common labeled secrets, Bearer tokens, and email addresses. Add domain-specific rules as needed. Redaction applies to the model-bound copy, not your original exported record.</p></details>
-  <details><summary>How do I start safely with my own workload?</summary><p>Try synthetic records, then use annotation mode on a bounded workload. Compare decisions against labeled incidents and inspect false negatives. Choose thresholds before enabling filtering, and review a sample of bypassed events. Live accuracy and savings have not been independently validated for this project.</p></details>
-  <a class="capability-link" href="/guide/">Full reference, examples, and troubleshooting ↗</a>
-</section>
-<section class="wrap closing"><p class="eyebrow">OPEN SOURCE, FROM DAY ONE</p><h2>Save the reasoning<br/><em>for the interesting part.</em></h2><a class="button" href={repo}>Explore the source <span>↗</span></a><p>Independent project. Not affiliated with TypeSafe, Vercel, or OpenTelemetry.</p></section>
-</main><footer class="wrap"><a class="brand" href="/">jev logs<span class="blue">_</span></a><span>MIT · Built for the signal.</span><a href="/guide/">Documentation</a><a href={repo}>GitHub ↗</a></footer>
+  <section id="sort" class="wrap section sorter">
+    <div class="section-heading">
+      <p class="eyebrow">00 / Jev’s desk</p>
+      <h2>Sort a tiny pile.</h2>
+      <p>
+        Health checks belong in <strong>background</strong>. Failures belong in <strong>signal</strong>.
+        Jev keeps every record — it just decides what deserves an expensive second look.
+        Same four sample logs as <code>npx jevlogs</code>.
+      </p>
+    </div>
+
+    <div class="desk">
+      <div class="desk-head">
+        <img
+          class="desk-face"
+          src="/jev-portrait.jpg"
+          width="720"
+          height="641"
+          alt="Close-up of Jev smiling while holding a blue signal card at a messy desk of log papers."
+        />
+        <p class="speech" id="jev-speech">Headphones on. Show me the pile.</p>
+      </div>
+      <div class="inbox" id="inbox">
+        <p class="inbox-label">Incoming logs</p>
+          {logs.map((log, index) => (
+            <article
+              class="slip"
+              draggable="true"
+              data-id={log.id}
+              data-route={log.route}
+              data-value={String(log.value)}
+              style={`--tilt: ${tilts[index]}`}
+            >
+              <div class="slip-top">
+                <span class:list={['severity', log.severity.toLowerCase()]}>{log.severity}</span>
+                <span class="value" hidden></span>
+              </div>
+              <code>{log.title}</code>
+              <small>{log.detail}</small>
+              <div class="slip-actions">
+                <button type="button" data-send="retain">background</button>
+                <button type="button" data-send="analyze">signal</button>
+              </div>
+            </article>
+          ))}
+      </div>
+
+      <div class="bins">
+        <div class="bin bin-retain" data-bin="retain">
+          <header>
+            <span>background</span>
+            <small>keep · skip LLM</small>
+            <b class="bin-count" aria-live="polite">0</b>
+          </header>
+          <div class="pile" data-empty="Drop the quiet ones"></div>
+        </div>
+        <div class="bin bin-analyze" data-bin="analyze">
+          <header>
+            <span>signal</span>
+            <small>keep · send to analysis</small>
+            <b class="bin-count" aria-live="polite">0</b>
+          </header>
+          <div class="pile" data-empty="Signal goes here"></div>
+        </div>
+      </div>
+
+      <div class="desk-bar">
+        <p id="sort-status">4 logs in the pile. Drag them, tap a bin, or let Jev sort.</p>
+        <div class="desk-actions">
+          <button type="button" class="button" id="jev-sort">Let Jev sort</button>
+          <button type="button" class="button-ghost" id="reset-sort">Reset pile</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="wrap section">
+    <div class="section-heading">
+      <p class="eyebrow">01 / A smaller first decision</p>
+      <h2>Think less about noise.<br /><em>Learn more from failures.</em></h2>
+      <p>Put a fast decision model before your reasoning model. Keep your observability pipeline, and choose what deserves a deeper look.</p>
+    </div>
+    <div class="features">
+      <article>
+        <span class="number">01</span>
+        <h3>Give every log a value.</h3>
+        <p>Jev grades diagnostic value on a 0–100 rubric, assigns urgency, and estimates whether further investigation is useful.</p>
+      </article>
+      <article>
+        <span class="number">02</span>
+        <h3>Keep the uncertain ones.</h3>
+        <p>Only confidently low-value events can skip analysis. Errors and protected records always pass through. A timeout preserves the record.</p>
+      </article>
+      <article>
+        <span class="number">03</span>
+        <h3>Make fewer expensive calls.</h3>
+        <p>Annotate first. Then enable routing on a separate LLM branch while your existing telemetry archive keeps everything.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="why">
+    <div class="wrap why-grid">
+      <div>
+        <p class="eyebrow">Built for decisions, not paragraphs</p>
+        <h2>Why Jev?<br /><em>The math is different.</em></h2>
+        <img
+          class="why-mascot"
+          src="/images/introducing-jevlogs.jpg"
+          width="320"
+          height="320"
+          loading="lazy"
+          decoding="async"
+          alt="Jev holding up a blue signal card under the words Introducing jev logs."
+        />
+      </div>
+      <div>
+        <div class="price">
+          <strong>$0.042</strong>
+          <span>per million input tokens<br />TypeSafe’s published launch price</span>
+        </div>
+        <p>Typed choices, rubric scores, and probabilities in one request. No generated explanation needed for a routing decision.</p>
+        <div class="why-details">
+          <span><b>Parallel questions</b>Shared log context</span>
+          <span><b>Free output</b>At TypeSafe launch pricing</span>
+          <span><b>Explicit uncertainty</b>Keep ambiguous events</span>
+        </div>
+        <p class="small">
+          Gateway lists $0.04/M; billing may differ. Jev is early access. Provider speed benchmarks are not Jev Logs benchmarks. Typed outputs can still make incorrect decisions.
+          <a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev" rel="noopener">Read TypeSafe’s announcement ↗</a>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="savings" class="wrap section">
+    <div class="section-heading">
+      <p class="eyebrow">02 / Less noise. A smaller bill.</p>
+      <h2>What could you save?</h2>
+      <p>A transparent estimate, not a benchmark. Adjust the fraction of logs still sent to your LLM, including errors, uncertain decisions, and failures.</p>
+    </div>
+    <div class="calculator">
+      <form id="cost-form" autocomplete="off">
+        <fieldset>
+          <legend>Your workload</legend>
+          <label>Logs per month<input name="logs" type="number" min="0" max="1000000000000" value="1000000" required /></label>
+          <label>Input tokens per log<input name="tokensPerLog" type="number" min="0" value="300" required /></label>
+          <label>Output tokens per log<input name="outputTokensPerLog" type="number" min="0" value="50" required /></label>
+          <label>Logs still analyzed · %<input name="retainedPercent" type="number" min="0" max="100" value="10" required /></label>
+        </fieldset>
+        <fieldset>
+          <legend>Model prices</legend>
+          <label>LLM input · $ / 1M tokens<input name="llmInputPerMillion" type="number" min="0" step="0.001" value="2" required /></label>
+          <label>LLM output · $ / 1M tokens<input name="llmOutputPerMillion" type="number" min="0" step="0.001" value="12" required /></label>
+          <label>Jev input · $ / 1M tokens<input name="jevInputPerMillion" type="number" min="0" step="0.001" value="0.042" required /></label>
+          <label>Jev question overhead · tokens<input name="questionTokensPerLog" type="number" min="0" value="400" required /></label>
+        </fieldset>
+      </form>
+      <div class="estimate" aria-live="polite">
+        <p class="micro">Estimated monthly savings</p>
+        <strong id="saved">$1,051</strong>
+        <span id="percent">87.6% less analysis spend</span>
+        <div class="cost-line"><span>Analyze everything</span><b id="baseline">$1,200.00</b></div>
+        <div class="bar baseline-bar"></div>
+        <div class="cost-line"><span>Jev + selected LLM calls</span><b id="with-jev">$149.40</b></div>
+        <div class="bar jev-bar" id="jev-bar"></div>
+        <p class="small">Includes Jev input and question overhead, plus selected LLM input and output. Excludes storage, ingestion, hosting, retries, discounts, and prompt caching. Assumes equal average log sizes; savings depend on your workload.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap section install">
+    <div>
+      <p class="eyebrow">03 / Small integration. Real control.</p>
+      <h2>Your pipeline.<br /><em>One new layer.</em></h2>
+      <p>Install with npm install jevlogs. Try npx jevlogs for the offline demo, or add jevlogs.config.json and run npx jevlogs --live to start a local OpenTelemetry receiver. Send HTTP/JSON logs, forward annotated records to your collector, or wrap your existing exporter.</p>
+      <a class="button" href="/guide/">Read the quick start <span>↗</span></a>
+    </div>
+    <div class="code-panel">
+      <div class="code-heading"><span>telemetry.ts</span><button type="button" id="copy-code">Copy</button></div>
+      <pre><code id="install-code">{snippet}</code></pre>
+      <p class="small code-note">Node.js 22+ · AI SDK 7.0.105 · OTel SDK Logs 0.222.0</p>
+    </div>
+  </section>
+
+  <section class="wrap closing">
+    <img
+      class="closing-banner"
+      src="/banner.jpg"
+      width="1800"
+      height="600"
+      loading="lazy"
+      decoding="async"
+      alt="Jev Logs banner: Keep your logs. Spend on the signal. Jev sorts log papers into background and signal."
+    />
+    <p class="eyebrow">Open source, from day one</p>
+    <h2>Save the reasoning<br /><em>for the interesting part.</em></h2>
+    <a class="button" href={repo} rel="noopener">Explore the source <span>↗</span></a>
+    <p>Independent project. Not affiliated with TypeSafe, Vercel, or OpenTelemetry.</p>
+  </section>
+</Base>
+
 <script>
 import { estimateSavings } from '../../../src/index';
+
 const form = document.querySelector<HTMLFormElement>('#cost-form')!;
 const money = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
 form.addEventListener('input', () => {
- if (!form.checkValidity()) { document.querySelector('#percent')!.textContent = 'Enter valid nonnegative values.'; return; }
- const entries = Object.fromEntries([...new FormData(form)].map(([k,v]) => [k, Number(v)]));
- const result = estimateSavings({ logs: entries.logs!, tokensPerLog: entries.tokensPerLog!, llmInputPerMillion: entries.llmInputPerMillion!, llmOutputPerMillion: entries.llmOutputPerMillion!, outputTokensPerLog: entries.outputTokensPerLog!, retainedFraction: entries.retainedPercent! / 100, jevInputPerMillion: entries.jevInputPerMillion!, questionTokensPerLog: entries.questionTokensPerLog! });
- document.querySelector('#saved')!.textContent = money(result.savings);
- document.querySelector('#percent')!.textContent = `${result.percent.toFixed(1)}% ${result.savings < 0 ? '(cost increase)' : 'less analysis spend'}`;
- document.querySelector('#baseline')!.textContent = money(result.baseline);
- document.querySelector('#with-jev')!.textContent = money(result.withJev);
- (document.querySelector('#jev-bar') as HTMLElement).style.width = `${Math.min(100, result.baseline ? result.withJev / result.baseline * 100 : 100)}%`;
+  if (!form.checkValidity()) {
+    document.querySelector('#percent')!.textContent = 'Enter valid nonnegative values.';
+    return;
+  }
+  const entries = Object.fromEntries([...new FormData(form)].map(([k, v]) => [k, Number(v)]));
+  const result = estimateSavings({
+    logs: entries.logs!,
+    tokensPerLog: entries.tokensPerLog!,
+    llmInputPerMillion: entries.llmInputPerMillion!,
+    llmOutputPerMillion: entries.llmOutputPerMillion!,
+    outputTokensPerLog: entries.outputTokensPerLog!,
+    retainedFraction: entries.retainedPercent! / 100,
+    jevInputPerMillion: entries.jevInputPerMillion!,
+    questionTokensPerLog: entries.questionTokensPerLog!,
+  });
+  document.querySelector('#saved')!.textContent = money(result.savings);
+  document.querySelector('#percent')!.textContent = `${result.percent.toFixed(1)}% ${result.savings < 0 ? '(cost increase)' : 'less analysis spend'}`;
+  document.querySelector('#baseline')!.textContent = money(result.baseline);
+  document.querySelector('#with-jev')!.textContent = money(result.withJev);
+  (document.querySelector('#jev-bar') as HTMLElement).style.width = `${Math.min(100, result.baseline ? result.withJev / result.baseline * 100 : 100)}%`;
 });
 form.dispatchEvent(new Event('input'));
-document.querySelector('#run-demo')!.addEventListener('click', () => {
- document.querySelectorAll<HTMLElement>('.log-row').forEach(row => { row.querySelector('.score')!.textContent = row.dataset.value!; row.querySelector('small')!.textContent = row.dataset.route!; });
- document.querySelector('#demo-status')!.textContent = '4 logs preserved. 2 selected for deeper analysis.';
- document.querySelector('#run-demo')!.textContent = 'Run again ↗';
+
+const copy = async (button: HTMLButtonElement, text: string, done: string) => {
+  const original = button.dataset.label ?? button.textContent!;
+  button.dataset.label = original;
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = done;
+  } catch {
+    button.textContent = 'Select to copy';
+  }
+  window.setTimeout(() => { button.textContent = button.dataset.label!; }, 1600);
+};
+
+document.querySelector('#copy-code')!.addEventListener('click', event => {
+  copy(event.currentTarget as HTMLButtonElement, document.querySelector('#install-code')!.textContent!, 'Copied');
 });
-document.querySelector('#copy-code')!.addEventListener('click', async event => { const button = event.currentTarget as HTMLButtonElement; try { await navigator.clipboard.writeText(document.querySelector('#install-code')!.textContent!); button.textContent = 'Copied'; } catch { button.textContent = 'Select code to copy'; } });
+document.querySelector('#copy-npx')!.addEventListener('click', async () => {
+  const label = document.querySelector<HTMLElement>('#copy-npx .npx-copy')!;
+  try {
+    await navigator.clipboard.writeText('npx jevlogs');
+    label.textContent = 'copied';
+  } catch {
+    label.textContent = 'select';
+  }
+  window.setTimeout(() => { label.textContent = 'copy'; }, 1600);
+});
+
+const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const inbox = document.querySelector('#inbox')!;
+const slips = [...document.querySelectorAll<HTMLElement>('.slip')];
+const statusEl = document.querySelector('#sort-status')!;
+const speechEl = document.querySelector('#jev-speech')!;
+const jevBtn = document.querySelector<HTMLButtonElement>('#jev-sort')!;
+const resetBtn = document.querySelector('#reset-sort')!;
+let busy = false;
+let runId = 0;
+let dragging: HTMLElement | null = null;
+
+const pause = (ms: number) => reduced ? Promise.resolve() : new Promise(resolve => setTimeout(resolve, ms));
+const placedCount = () => slips.filter(slip => slip.classList.contains('placed')).length;
+const say = (text: string) => { speechEl.textContent = text; };
+const updateCounts = () => {
+  for (const bin of document.querySelectorAll('.bin')) {
+    const count = bin.querySelector('.bin-count');
+    if (count) count.textContent = String(bin.querySelectorAll('.slip').length);
+  }
+};
+
+const valueOf = (slip: HTMLElement) => {
+  const value = slip.querySelector<HTMLElement>('.value')!;
+  value.hidden = false;
+  value.textContent = slip.dataset.value ?? '';
+  slip.classList.add('revealed');
+};
+
+const returnToInbox = () => {
+  for (const slip of slips) {
+    slip.classList.remove('placed', 'revealed', 'match', 'miss', 'dragging');
+    const value = slip.querySelector<HTMLElement>('.value')!;
+    value.hidden = true;
+    value.textContent = '';
+    inbox.append(slip);
+  }
+  updateCounts();
+};
+
+const grade = () => {
+  let matches = 0;
+  for (const slip of slips) {
+    const got = slip.parentElement?.closest('.bin')?.getAttribute('data-bin');
+    const ok = got === slip.dataset.route;
+    if (ok) matches += 1;
+    slip.classList.toggle('match', Boolean(ok));
+    slip.classList.toggle('miss', !ok);
+    valueOf(slip);
+  }
+  return matches;
+};
+
+const finish = (kind: 'user' | 'jev') => {
+  const matches = grade();
+  if (kind === 'jev') {
+    say('4 logs preserved. 2 selected for analysis.');
+    statusEl.textContent = 'Kept 4. 2 go to signal. Same routing as the CLI demo.';
+  } else if (matches === 4) {
+    say('You and Jev heard the same signal.');
+    statusEl.textContent = 'Perfect sort. 2 in signal, 2 stay in the archive.';
+  } else {
+    say(`${matches}/4 matched Jev. Errors still go to signal.`);
+    statusEl.textContent = `${matches}/4 matched Jev. Misses are marked — reset to try again.`;
+  }
+};
+
+const place = (slip: HTMLElement, route: string, fromJev = false) => {
+  const pile = document.querySelector(`[data-bin="${route}"] .pile`);
+  if (!pile || (busy && !fromJev)) return;
+  slip.classList.add('placed');
+  pile.append(slip);
+  const bin = pile.closest('.bin');
+  bin?.classList.add('got');
+  window.setTimeout(() => bin?.classList.remove('got'), 380);
+  updateCounts();
+  say(route === 'analyze' ? 'That one deserves a closer look.' : 'Quiet one. Keep it in the archive.');
+  if (!fromJev && placedCount() === slips.length) finish('user');
+  else if (placedCount() < slips.length) statusEl.textContent = `${slips.length - placedCount()} left in the pile.`;
+};
+
+jevBtn.addEventListener('click', async () => {
+  if (busy) return;
+  const id = ++runId;
+  busy = true;
+  jevBtn.disabled = true;
+  returnToInbox();
+  say('Scoring diagnostic value…');
+  statusEl.textContent = 'Jev is sorting. Every log is kept; only signal is recommended for analysis.';
+  for (const [index, slip] of slips.entries()) {
+    await pause(280);
+    if (id !== runId) return;
+    statusEl.textContent = `Scoring ${index + 1} of ${slips.length}…`;
+    place(slip, slip.dataset.route!, true);
+    valueOf(slip);
+  }
+  if (id !== runId) return;
+  finish('jev');
+  jevBtn.disabled = false;
+  jevBtn.textContent = 'Sort again';
+  busy = false;
+});
+
+resetBtn.addEventListener('click', () => {
+  runId += 1;
+  busy = false;
+  jevBtn.disabled = false;
+  jevBtn.textContent = 'Let Jev sort';
+  returnToInbox();
+  say('Headphones on. Show me the pile.');
+  statusEl.textContent = '4 logs in the pile. Drag them, tap a bin, or let Jev sort.';
+});
+
+for (const slip of slips) {
+  slip.addEventListener('dragstart', event => {
+    if (busy) { event.preventDefault(); return; }
+    dragging = slip;
+    slip.classList.add('dragging');
+    event.dataTransfer?.setData('text/plain', slip.dataset.id ?? '');
+    event.dataTransfer!.effectAllowed = 'move';
+  });
+  slip.addEventListener('dragend', () => {
+    slip.classList.remove('dragging');
+    dragging = null;
+    document.querySelectorAll('.bin, .inbox').forEach(node => node.classList.remove('over'));
+  });
+  slip.querySelectorAll<HTMLButtonElement>('[data-send]').forEach(button => {
+    button.addEventListener('click', () => {
+      if (busy) return;
+      place(slip, button.dataset.send!);
+    });
+  });
+}
+
+for (const bin of document.querySelectorAll<HTMLElement>('.bin')) {
+  bin.addEventListener('dragover', event => {
+    event.preventDefault();
+    if (!busy) bin.classList.add('over');
+  });
+  bin.addEventListener('dragleave', () => bin.classList.remove('over'));
+  bin.addEventListener('drop', event => {
+    event.preventDefault();
+    bin.classList.remove('over');
+    if (dragging && !busy) place(dragging, bin.dataset.bin!);
+  });
+}
+
+inbox.addEventListener('dragover', event => {
+  event.preventDefault();
+  inbox.classList.add('over');
+});
+inbox.addEventListener('dragleave', () => inbox.classList.remove('over'));
+inbox.addEventListener('drop', event => {
+  event.preventDefault();
+  inbox.classList.remove('over');
+  if (!dragging || busy) return;
+  dragging.classList.remove('placed', 'revealed', 'match', 'miss');
+  const value = dragging.querySelector<HTMLElement>('.value')!;
+  value.hidden = true;
+  inbox.append(dragging);
+  updateCounts();
+  statusEl.textContent = `${slips.length - placedCount()} left in the pile.`;
+});
 </script>
-</body></html>
