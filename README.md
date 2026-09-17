@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/reachjalil/jevlogs/main/docs/assets/readme-banner.png" alt="Jev Logs — Keep your logs. Spend on the signal. A relaxed robot in blue headphones sorts log records into background and signal." width="100%" />
+  <img src="https://raw.githubusercontent.com/reachjalil/jevlogs/main/docs/assets/readme-banner.png" alt="Jev Logs. Keep your logs. Spend on the signal." width="100%" />
 </p>
 
 <h1 align="center">Jev Logs</h1>
 
 <p align="center">
-  <strong>A little intelligence between your logs and your LLM bill.</strong><br />
-  Score, prioritize, and route OpenTelemetry logs with Jev. Keep the signal. Keep your stack.
+  <strong>Score OpenTelemetry logs before expensive LLM analysis.</strong><br />
+  Diagnostic value, priority, and routing with TypeSafe's Jev. Every record stays in your archive.
 </p>
 
 <p align="center">
@@ -27,19 +27,19 @@
 
 ---
 
-## Meet your log filter’s smarter friend
+## What Jev Logs does
 
-Health checks. Cache hits. A payment failure hiding in the middle. Sending every event to a reasoning model adds cost before the investigation even starts.
+Health checks and cache hits still hit a reasoning model if you send every event. That costs money before you start investigating.
 
-**Jev Logs makes the first decision:** how useful is this log, how urgent is it, and does it deserve deeper analysis? It uses [TypeSafe’s Jev](https://typesafe.ai/) through the Vercel AI SDK, with a small TypeScript API and an OpenTelemetry exporter wrapper.
+Jev Logs scores each log first: how useful it is, how urgent it is, and whether it should go to deeper analysis. It uses [TypeSafe's Jev](https://typesafe.ai/) through the Vercel AI SDK, with a TypeScript API and an OpenTelemetry exporter wrapper.
 
-| A small layer | What you get |
+| Layer | What you get |
 | :--- | :--- |
-| **Score the signal** | A 0–100 diagnostic-value score, priority, and actionable probability. |
-| **Keep your pipeline** | Wrap your existing exporter; preserve resource, scope, timestamps, and trace context. |
-| **Start with visibility** | Annotation mode keeps every record and attaches `jev.*` attributes. |
-| **Spend selectively** | Route confidently low-value events away from a separate LLM-analysis branch. |
-| **Keep the uncertain ones** | Errors, protected records, ambiguity, and provider failures remain eligible for analysis. |
+| **Score** | A 0-100 diagnostic-value score, priority, and actionable probability. |
+| **Keep the pipeline** | Wrap your existing exporter. Resource, scope, timestamps, and trace context stay on the record. |
+| **Annotate first** | Annotation mode keeps every record and attaches `jev.*` attributes. |
+| **Route later** | Confidently low-value events can skip a separate LLM-analysis branch. |
+| **Keep uncertain records** | Errors, protected records, ambiguity, and provider failures stay eligible for analysis. |
 
 ## Start a local OpenTelemetry receiver with one config
 
@@ -180,7 +180,7 @@ Rules run after protection and redaction and before the cache or the model, so k
 | **Keep audit events eligible for analysis** | Set `protected: true` in standalone/CLI input or `jev.protected: true` in OTel attributes. | Your policy for deciding which records are protected. |
 | **Plan an analysis budget** | Use `estimateSavings()` with measured volume and your model prices. | Actual token metering and billing verification. |
 
-**[Read the complete capability and integration guide →](https://jevlogs.workspaceagent.workers.dev/guide/)**
+**[Read the capability and integration guide](https://jevlogs.com/guide/)**
 
 The guide includes the full CLI reference, JSONL schema, decision fields, configuration defaults, an archive-plus-analysis pipeline, redaction examples, cost calculation, and troubleshooting. [Read the same guide on GitHub](docs/guide.md).
 
@@ -295,7 +295,7 @@ provider.getLogger('app').emit({
 await provider.shutdown();
 ```
 
-**Annotate first. Route when you’re ready.** Keep your original archive processor, then add a separate analysis-queue exporter with `mode: 'analysis-only'`. Annotation alone does not reduce LLM billing; the downstream analysis pipeline must act on the routing decision.
+**Annotate first. Route when you are ready.** Keep your original archive processor, then add a separate analysis-queue exporter with `mode: 'analysis-only'`. Annotation alone does not reduce LLM billing; the downstream analysis pipeline must act on the routing decision.
 
 [Read the integration guide →](https://github.com/reachjalil/jevlogs/blob/main/docs/guide.md) · [Open the runnable example →](https://github.com/reachjalil/jevlogs/blob/main/examples/telemetry.ts)
 
@@ -328,7 +328,7 @@ ERROR/FATAL records and records marked `jev.protected: true` always remain eligi
 | `value` | Five-level diagnostic rubric mapped to 0–100. Not money or confidence. |
 | `priority` | `critical`, `high`, `normal`, or `low`. |
 | `route` | `analyze` or `retain`. |
-| `actionableProbability` | Jev’s boolean estimate; `null` when no model decision is available. |
+| `actionableProbability` | Jev's boolean estimate; `null` when no model decision is available. |
 | `reason` | `model`, `protected`, `uncertain`, `unavailable`, or `rule`. |
 | `cached` | `true` when served from the local decision cache instead of a new model call. |
 | `rule` | Name of the matching configured rule when `reason` is `rule`. |
@@ -346,13 +346,13 @@ jev.stats(); // decisions, model calls, cache hits, rule hits, latency, input to
 
 The exporter defaults to four concurrent requests, configurable from 1–32. Use OTel batches of 16; larger batches may exceed export deadlines. Overlapping exports bypass scoring and forward all records unchanged. Consumers should analyze records with missing decisions.
 
-Fallback value `100` means “conservatively keep,” not model certainty. Protected severity means `severityNumber >= 17` or severity text `ERROR`, `FATAL`, or `CRITICAL`. Reserve the `jev.*` attribute prefix for SDK annotations. Downstream exporter errors propagate through OTel callbacks; this package does not provide a durable queue.
+Fallback value `100` means "conservatively keep", not model certainty. Protected severity means `severityNumber >= 17` or severity text `ERROR`, `FATAL`, or `CRITICAL`. Reserve the `jev.*` attribute prefix for SDK annotations. Downstream exporter errors propagate through OTel callbacks; this package does not provide a durable queue.
 
 </details>
 
-## Smaller bill. Transparent math.
+## Cost estimate
 
-**A $1,000 monthly analysis bill could become $129.40 when only 10% of logs need deeper analysis.** That is **87.06% lower modeled LLM spend**, including Jev triage—not a measured production result.
+**A $1,000 monthly analysis bill can model as $129.40 when 10% of logs still need deeper analysis.** That is 87.06% lower modeled LLM spend, including Jev triage. It is not a measured production result.
 
 The mechanism is simple: pay Jev for a small structured decision, then pay your analysis model only for the selected records. Your existing archive still keeps every log. Annotation alone does not save analysis cost; connect an analysis branch and enable routing to reduce calls.
 
@@ -365,9 +365,9 @@ The mechanism is simple: pay Jev for a small structured decision, then pay your 
 
 *Illustrative assumptions: 1M logs/month, 300 input and 50 output tokens per analyzed log; GPT-4.1 at $2/$8 per million input/output tokens; Jev at $0.042/M input with free output; 400 assumed question/context tokens per record. We conservatively charge Jev for every record, even though protected errors bypass evaluation. The routing percentages and token counts are assumptions, not measured Jev Logs accuracy or usage.*
 
-A cheaper downstream model changes the economics: at GPT-4.1 mini’s published $0.40/$1.60 rates, the same 10% scenario falls from **$200 to $49.40 (75.3%)**. These examples compare routing costs, not model quality. Filtering must be evaluated against incident recall on your own logs.
+A cheaper downstream model changes the economics: at GPT-4.1 mini's published $0.40/$1.60 rates, the same 10% scenario falls from **$200 to $49.40 (75.3%)**. These examples compare routing costs, not model quality. Filtering must be evaluated against incident recall on your own logs.
 
-[Try the editable savings calculator →](https://jevlogs.workspaceagent.workers.dev/#savings)
+[Try the savings calculator](https://jevlogs.com/#savings)
 
 ```text
 Baseline = logs × (input tokens × input rate + output tokens × output rate) / 1M
@@ -393,7 +393,7 @@ Check actual billing and token usage before budgeting. Provider speed and cost b
 
 ## Data stays under your control
 
-Only the log body and severity enter the model request; arbitrary OTel attributes are not sent. The SDK redacts common labeled secrets, Bearer tokens, and email addresses before transmission. Supply a domain-specific `redact(text)` hook for your own data policy—the default is not comprehensive PII detection.
+Only the log body and severity enter the model request; arbitrary OTel attributes are not sent. The SDK redacts common labeled secrets, Bearer tokens, and email addresses before transmission. Supply a domain-specific `redact(text)` hook for your own data policy. The default is not comprehensive PII detection.
 
 Keep Gateway credentials on the server. Mark audit, security, and compliance records as protected. Evaluate incident recall on labeled logs before enabling analysis filtering, and periodically review a sample of bypassed events. Typed outputs can still contain incorrect decisions.
 
@@ -420,11 +420,11 @@ The default redactor transforms the **model-bound copy**, not the original recor
 | Live Jev accuracy and production savings | Not yet independently validated for this project |
 | `jevlogs.com` | Domain connection pending |
 
-The AI SDK’s `experimental_evaluate` API is pinned and experimental. Jev is a hosted model; this repository makes the **integration SDK** open source. This is an independent project, not an official GitHub, TypeSafe, Vercel, or OpenTelemetry product.
+The AI SDK's `experimental_evaluate` API is pinned and experimental. Jev is a hosted model; this repository makes the **integration SDK** open source. This is an independent project, not an official GitHub, TypeSafe, Vercel, or OpenTelemetry product.
 
 ## Launch artwork
 
-[Download the compact “Introducing Jev Logs” image](site/public/images/introducing-jevlogs.jpg). Both the launch card and README banner carry a `jevlogs.com` signature.
+[Download the compact "Introducing Jev Logs" image](site/public/images/introducing-jevlogs.jpg). Both the launch card and README banner carry a `jevlogs.com` signature.
 
 ## Agent skill
 
@@ -440,7 +440,7 @@ Then ask your agent things like "use Jev to prioritize these logs", "add Jev Log
 
 ## Build with us
 
-Small improvements welcome: integration examples, clearer docs, reproducible bugs, and evaluations on synthetic or sanitized logs. Please don’t attach credentials or sensitive production logs to issues.
+Small improvements welcome: integration examples, clearer docs, reproducible bugs, and evaluations on synthetic or sanitized logs. Please don't attach credentials or sensitive production logs to issues.
 
 ```sh
 git clone https://github.com/reachjalil/jevlogs.git
@@ -458,6 +458,6 @@ For the website, run `pnpm --filter jevlogs-site dev`. To inspect the publishabl
 ---
 
 <p align="center">
-  <strong>Keep the logs. Save the reasoning for the interesting part.</strong><br />
-  <sub>Made for developers who like useful signals and smaller bills. <a href="https://github.com/reachjalil/jevlogs/blob/main/LICENSE">MIT licensed.</a></sub>
+  <strong>Keep every log. Spend analysis on the records that need it.</strong><br />
+  <sub>MIT licensed. <a href="https://github.com/reachjalil/jevlogs/blob/main/LICENSE">License</a></sub>
 </p>

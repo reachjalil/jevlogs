@@ -4,7 +4,7 @@ export const siteMeta = {
   url: 'https://jevlogs.com',
   description:
     'Open-source TypeScript log triage with Jev, Vercel AI SDK, and OpenTelemetry. Score diagnostic value before expensive LLM analysis.',
-  version: '0.2.0',
+  version: '0.3.0',
   license: 'MIT',
   locale: 'en_US',
   themeColor: '#2448ff',
@@ -13,6 +13,5 @@ export const siteMeta = {
   ogImage: '/og.jpg',
   ogWidth: 1200,
   ogHeight: 630,
-  ogAlt:
-    'Jev Logs — Keep your logs. Spend on the signal. A relaxed ivory robot in cobalt headphones sorts log slips into background and signal.',
+  ogAlt: 'Jev Logs. Keep your logs. Spend on the signal.',
 } as const;

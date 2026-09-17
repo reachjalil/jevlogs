@@ -48,24 +48,23 @@ const logs = [
   },
 ] as const;
 
-const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
 ---
 <Base
-  title="Jev Logs — Keep your logs. Spend on the signal."
+  title="Jev Logs. Keep your logs. Spend on the signal."
   description="Open-source TypeScript log triage with Jev, Vercel AI SDK, and OpenTelemetry. Score diagnostic value before expensive LLM analysis."
   markdownHref="/index.md"
 >
   <section class="hero wrap">
     <div class="hero-copy">
       <p class="eyebrow">Open source · OpenTelemetry · TypeScript</p>
-      <h1>Keep your logs.<br />Spend on <em>the signal.</em></h1>
+      <h1>Keep your logs.<br />Spend on the <em>signal.</em></h1>
       <p class="lead">
-        Meet Jev: a tiny robot with headphones and a strong opinion about noise.
-        Your LLM doesn’t need every health check. Let Jev find the logs worth thinking about.
+        Score diagnostic value on OpenTelemetry logs before you send them to an expensive reasoning model.
+        Every record stays in your archive. Analysis is recommended only for high-value, uncertain, or protected events.
       </p>
       <div class="actions">
-        <a class="button" href="/guide/">Start building <span>↗</span></a>
-        <a class="text-link" href="#sort">Sort a pile with Jev ↓</a>
+        <a class="button" href="/guide/">Read the guide</a>
+        <a class="text-link" href="#demo">Try a sample</a>
       </div>
       <div class="launch-row">
         <button class="npx" id="copy-npx" type="button" aria-label="Copy npx jevlogs">
@@ -73,7 +72,7 @@ const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
           <code>npx jevlogs</code>
           <span class="npx-copy">copy</span>
         </button>
-        <p class="launch-note">v0.3.0 · MIT licensed · npm install jevlogs</p>
+        <p class="launch-note">v0.3.0 · MIT · npm install jevlogs</p>
       </div>
     </div>
     <figure class="hero-art">
@@ -81,33 +80,32 @@ const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
         src="/jev.jpg"
         width="1300"
         height="722"
-        alt="Jev, a relaxed ivory robot in cobalt headphones, sorting log slips into a gray background box and a blue signal box."
+        alt="Jev Logs routing log records into a background bin and a signal bin."
         fetchpriority="high"
       />
       <figcaption>
-        Every log is kept. Background stays cheap. Signal gets the thinking.
+        Background skips the analysis model. Signal is recommended for deeper analysis. Every record is kept.
       </figcaption>
     </figure>
   </section>
 
   <div class="wrap integrations">
-    <span class="micro">Fits your existing stack</span>
+    <span class="micro">Works&nbsp;with</span>
     <strong>OpenTelemetry</strong>
-    <span>+</span>
-    <strong>Jev by TypeSafe</strong>
-    <span>+</span>
+    <span aria-hidden="true">·</span>
+    <strong>TypeSafe Jev</strong>
+    <span aria-hidden="true">·</span>
     <strong>Vercel AI SDK</strong>
-    <span class="end-note">Your exporters. Your infrastructure.</span>
   </div>
 
-  <section id="sort" class="wrap section sorter">
+  <section id="demo" class="wrap section sorter">
     <div class="section-heading">
-      <p class="eyebrow">00 / Jev’s desk</p>
-      <h2>Sort a tiny pile.</h2>
+      <p class="eyebrow">Sample routing</p>
+      <h2>The same four logs as the CLI demo</h2>
       <p>
-        Health checks belong in <strong>background</strong>. Failures belong in <strong>signal</strong>.
-        Jev keeps every record — it just decides what deserves an expensive second look.
-        Same four sample logs as <code>npx jevlogs</code>.
+        Health checks go to <strong>background</strong> (keep, skip the analysis model).
+        Failures go to <strong>signal</strong> (keep, send to analysis).
+        Drag a record or tap a destination. These are the four sample logs from <code>npx jevlogs</code>.
       </p>
     </div>
 
@@ -118,20 +116,19 @@ const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
           src="/jev-portrait.jpg"
           width="720"
           height="641"
-          alt="Close-up of Jev smiling while holding a blue signal card at a messy desk of log papers."
+          alt=""
         />
-        <p class="speech" id="jev-speech">Headphones on. Show me the pile.</p>
+        <p class="speech" id="jev-speech">Ready to score diagnostic value.</p>
       </div>
       <div class="inbox" id="inbox">
         <p class="inbox-label">Incoming logs</p>
-          {logs.map((log, index) => (
+          {logs.map((log) => (
             <article
               class="slip"
               draggable="true"
               data-id={log.id}
               data-route={log.route}
               data-value={String(log.value)}
-              style={`--tilt: ${tilts[index]}`}
             >
               <div class="slip-top">
                 <span class:list={['severity', log.severity.toLowerCase()]}>{log.severity}</span>
@@ -154,7 +151,7 @@ const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
             <small>keep · skip LLM</small>
             <b class="bin-count" aria-live="polite">0</b>
           </header>
-          <div class="pile" data-empty="Drop the quiet ones"></div>
+          <div class="pile" data-empty="Skip analysis"></div>
         </div>
         <div class="bin bin-analyze" data-bin="analyze">
           <header>
@@ -162,15 +159,15 @@ const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
             <small>keep · send to analysis</small>
             <b class="bin-count" aria-live="polite">0</b>
           </header>
-          <div class="pile" data-empty="Signal goes here"></div>
+          <div class="pile" data-empty="Send to analysis"></div>
         </div>
       </div>
 
       <div class="desk-bar">
-        <p id="sort-status">4 logs in the pile. Drag them, tap a bin, or let Jev sort.</p>
+        <p id="sort-status">4 records. Drag, tap a destination, or run the sample.</p>
         <div class="desk-actions">
-          <button type="button" class="button" id="jev-sort">Let Jev sort</button>
-          <button type="button" class="button-ghost" id="reset-sort">Reset pile</button>
+          <button type="button" class="button" id="jev-sort">Run sample</button>
+          <button type="button" class="button-ghost" id="reset-sort">Reset</button>
         </div>
       </div>
     </div>
@@ -178,25 +175,25 @@ const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
 
   <section id="how" class="wrap section">
     <div class="section-heading">
-      <p class="eyebrow">01 / A smaller first decision</p>
-      <h2>Think less about noise.<br /><em>Learn more from failures.</em></h2>
-      <p>Put a fast decision model before your reasoning model. Keep your observability pipeline, and choose what deserves a deeper look.</p>
+      <p class="eyebrow">How it works</p>
+      <h2>Score first. Analyze second.</h2>
+      <p>Jev Logs wraps the OpenTelemetry log exporter you already use. It attaches a diagnostic-value score, a priority, and a routing recommendation. Your archive exporter is unchanged.</p>
     </div>
     <div class="features">
       <article>
         <span class="number">01</span>
-        <h3>Give every log a value.</h3>
-        <p>Jev grades diagnostic value on a 0–100 rubric, assigns urgency, and estimates whether further investigation is useful.</p>
+        <h3>Score every record</h3>
+        <p>Each log gets a 0-100 diagnostic-value score, a priority, and an actionable probability from TypeSafe's Jev.</p>
       </article>
       <article>
         <span class="number">02</span>
-        <h3>Keep the uncertain ones.</h3>
-        <p>Only confidently low-value events can skip analysis. Errors and protected records always pass through. A timeout preserves the record.</p>
+        <h3>Keep uncertain and protected records</h3>
+        <p>A record can skip analysis only when value is 25 or below, priority is low, and actionable probability is below retainBelow. Errors, protected records, and timeouts stay on the analysis path.</p>
       </article>
       <article>
         <span class="number">03</span>
-        <h3>Make fewer expensive calls.</h3>
-        <p>Annotate first. Then enable routing on a separate LLM branch while your existing telemetry archive keeps everything.</p>
+        <h3>Route a separate analysis branch</h3>
+        <p>Start in annotate mode so every record is exported with jev.* attributes. Use analysis-only mode on a second processor when you are ready to skip low-value LLM calls.</p>
       </article>
     </div>
   </section>
@@ -204,8 +201,8 @@ const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
   <section class="why">
     <div class="wrap why-grid">
       <div>
-        <p class="eyebrow">Built for decisions, not paragraphs</p>
-        <h2>Why Jev?<br /><em>The math is different.</em></h2>
+        <p class="eyebrow">Model price</p>
+        <h2>Typed routing at TypeSafe launch pricing</h2>
         <img
           class="why-mascot"
           src="/images/introducing-jevlogs.jpg"
@@ -213,23 +210,23 @@ const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
           height="320"
           loading="lazy"
           decoding="async"
-          alt="Jev holding up a blue signal card under the words Introducing jev logs."
+          alt=""
         />
       </div>
       <div>
         <div class="price">
           <strong>$0.042</strong>
-          <span>per million input tokens<br />TypeSafe’s published launch price</span>
+          <span>per million input tokens<br />TypeSafe's published launch price</span>
         </div>
-        <p>Typed choices, rubric scores, and probabilities in one request. No generated explanation needed for a routing decision.</p>
+        <p>One request returns choices, rubric scores, and probabilities. A routing decision does not need a generated explanation.</p>
         <div class="why-details">
           <span><b>Parallel questions</b>Shared log context</span>
           <span><b>Free output</b>At TypeSafe launch pricing</span>
-          <span><b>Explicit uncertainty</b>Keep ambiguous events</span>
+          <span><b>Uncertain answers</b>Stay eligible for analysis</span>
         </div>
         <p class="small">
-          Gateway lists $0.04/M; billing may differ. Jev is early access. Provider speed benchmarks are not Jev Logs benchmarks. Typed outputs can still make incorrect decisions.
-          <a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev" rel="noopener">Read TypeSafe’s announcement ↗</a>
+          Vercel AI Gateway lists $0.04/M. Billing may differ. Jev is early access. Provider speed numbers are not Jev Logs benchmarks. Typed outputs can still be wrong.
+          <a href="https://typesafe.ai/blog/introducing-system-one-models-and-jev" rel="noopener">TypeSafe announcement</a>
         </p>
       </div>
     </div>
@@ -237,9 +234,9 @@ const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
 
   <section id="savings" class="wrap section">
     <div class="section-heading">
-      <p class="eyebrow">02 / Less noise. A smaller bill.</p>
-      <h2>What could you save?</h2>
-      <p>A transparent estimate, not a benchmark. Adjust the fraction of logs still sent to your LLM, including errors, uncertain decisions, and failures.</p>
+      <p class="eyebrow">Cost estimate</p>
+      <h2>Estimate analysis spend</h2>
+      <p>This uses <code>estimateSavings()</code> from the package. It is an estimate, not a benchmark. Include errors, uncertain decisions, and failures in the fraction still sent to your LLM.</p>
     </div>
     <div class="calculator">
       <form id="cost-form" autocomplete="off">
@@ -273,10 +270,10 @@ const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
 
   <section class="wrap section install">
     <div>
-      <p class="eyebrow">03 / Small integration. Real control.</p>
-      <h2>Your pipeline.<br /><em>One new layer.</em></h2>
-      <p>Install with npm install jevlogs. Try npx jevlogs for the offline demo, or add jevlogs.config.json and run npx jevlogs --live to start a local OpenTelemetry receiver. Send HTTP/JSON logs, forward annotated records to your collector, or wrap your existing exporter.</p>
-      <a class="button" href="/guide/">Read the quick start <span>↗</span></a>
+      <p class="eyebrow">Install</p>
+      <h2>Wrap the exporter you already have</h2>
+      <p>Install with <code>npm install jevlogs</code>. <code>npx jevlogs</code> runs the offline demo. Add <code>jevlogs.config.json</code> and run <code>npx jevlogs --live</code> for a local OpenTelemetry receiver. Send OTLP HTTP/JSON, set <code>forwardUrl</code> for your collector, or wrap your existing exporter.</p>
+      <a class="button" href="/guide/">Read the guide</a>
     </div>
     <div class="code-panel">
       <div class="code-heading"><span>telemetry.ts</span><button type="button" id="copy-code">Copy</button></div>
@@ -293,11 +290,11 @@ const tilts = ['-1.6deg', '1.4deg', '-0.8deg', '1.8deg'];
       height="600"
       loading="lazy"
       decoding="async"
-      alt="Jev Logs banner: Keep your logs. Spend on the signal. Jev sorts log papers into background and signal."
+      alt="Jev Logs. Keep your logs. Spend on the signal."
     />
-    <p class="eyebrow">Open source, from day one</p>
-    <h2>Save the reasoning<br /><em>for the interesting part.</em></h2>
-    <a class="button" href={repo} rel="noopener">Explore the source <span>↗</span></a>
+    <p class="eyebrow">MIT licensed</p>
+    <h2>Source is on GitHub</h2>
+    <a class="button" href={repo} rel="noopener">View source</a>
     <p>Independent project. Not affiliated with TypeSafe, Vercel, or OpenTelemetry.</p>
   </section>
 </Base>
@@ -412,14 +409,14 @@ const grade = () => {
 const finish = (kind: 'user' | 'jev') => {
   const matches = grade();
   if (kind === 'jev') {
-    say('4 logs preserved. 2 selected for analysis.');
-    statusEl.textContent = 'Kept 4. 2 go to signal. Same routing as the CLI demo.';
+    say('4 kept. 2 recommended for analysis.');
+    statusEl.textContent = '4 kept. 2 routed to signal. Same answers as the CLI demo.';
   } else if (matches === 4) {
-    say('You and Jev heard the same signal.');
-    statusEl.textContent = 'Perfect sort. 2 in signal, 2 stay in the archive.';
+    say('Your routing matched the sample.');
+    statusEl.textContent = 'Match. 2 in signal, 2 in background.';
   } else {
-    say(`${matches}/4 matched Jev. Errors still go to signal.`);
-    statusEl.textContent = `${matches}/4 matched Jev. Misses are marked — reset to try again.`;
+    say(`${matches}/4 matched the sample. Errors stay in signal.`);
+    statusEl.textContent = `${matches}/4 matched the sample. Misses are marked. Reset to try again.`;
   }
 };
 
@@ -432,9 +429,9 @@ const place = (slip: HTMLElement, route: string, fromJev = false) => {
   bin?.classList.add('got');
   window.setTimeout(() => bin?.classList.remove('got'), 380);
   updateCounts();
-  say(route === 'analyze' ? 'That one deserves a closer look.' : 'Quiet one. Keep it in the archive.');
+  say(route === 'analyze' ? 'Routed to signal.' : 'Routed to background.');
   if (!fromJev && placedCount() === slips.length) finish('user');
-  else if (placedCount() < slips.length) statusEl.textContent = `${slips.length - placedCount()} left in the pile.`;
+  else if (placedCount() < slips.length) statusEl.textContent = `${slips.length - placedCount()} remaining.`;
 };
 
 jevBtn.addEventListener('click', async () => {
@@ -443,8 +440,8 @@ jevBtn.addEventListener('click', async () => {
   busy = true;
   jevBtn.disabled = true;
   returnToInbox();
-  say('Scoring diagnostic value…');
-  statusEl.textContent = 'Jev is sorting. Every log is kept; only signal is recommended for analysis.';
+  say('Scoring diagnostic value.');
+  statusEl.textContent = 'Scoring. Every record is kept. Signal is recommended for analysis.';
   for (const [index, slip] of slips.entries()) {
     await pause(280);
     if (id !== runId) return;
@@ -455,7 +452,7 @@ jevBtn.addEventListener('click', async () => {
   if (id !== runId) return;
   finish('jev');
   jevBtn.disabled = false;
-  jevBtn.textContent = 'Sort again';
+  jevBtn.textContent = 'Run again';
   busy = false;
 });
 
@@ -463,10 +460,10 @@ resetBtn.addEventListener('click', () => {
   runId += 1;
   busy = false;
   jevBtn.disabled = false;
-  jevBtn.textContent = 'Let Jev sort';
+  jevBtn.textContent = 'Run sample';
   returnToInbox();
-  say('Headphones on. Show me the pile.');
-  statusEl.textContent = '4 logs in the pile. Drag them, tap a bin, or let Jev sort.';
+  say('Ready to score diagnostic value.');
+  statusEl.textContent = '4 records. Drag, tap a destination, or run the sample.';
 });
 
 for (const slip of slips) {
@@ -517,6 +514,6 @@ inbox.addEventListener('drop', event => {
   value.hidden = true;
   inbox.append(dragging);
   updateCounts();
-  statusEl.textContent = `${slips.length - placedCount()} left in the pile.`;
+  statusEl.textContent = `${slips.length - placedCount()} remaining.`;
 });
 </script>

@@ -18,7 +18,7 @@ Jev Logs does **not** store logs, delete archives, or replace your exporter. Eve
 2. Diagnostic value is 25 or below (0–100 rubric)
 3. Actionable probability is below `retainBelow` (default `0.1`)
 
-ERROR/FATAL/CRITICAL records and `jev.protected` records always stay eligible for analysis. Timeouts, malformed answers, and provider failures also stay eligible (`reason: unavailable`). Fallback value `100` means “conservatively keep,” not model certainty.
+ERROR/FATAL/CRITICAL records and `jev.protected` records always stay eligible for analysis. Timeouts, malformed answers, and provider failures also stay eligible (`reason: unavailable`). Fallback value `100` means "conservatively keep", not model certainty.
 
 ## Try it
 

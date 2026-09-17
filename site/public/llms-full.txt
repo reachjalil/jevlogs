@@ -1,10 +1,10 @@
 # Jev Logs
 
-> Open-source TypeScript log triage. Score, prioritize, and route OpenTelemetry logs with TypeSafe’s Jev before expensive LLM analysis. MIT licensed. npm package `jevlogs` v0.3.0. Requires Node.js 22+.
+> Open-source TypeScript log triage. Score, prioritize, and route OpenTelemetry logs with TypeSafe's Jev before expensive LLM analysis. MIT licensed. npm package `jevlogs` v0.3.0. Requires Node.js 22+.
 
-Jev Logs is a small decision layer between your logs and your LLM bill. It keeps every record. Only confidently low-value, low-priority events may skip a separate analysis branch. Errors, protected records, timeouts, and uncertain answers stay eligible for analysis.
+Jev Logs sits between your logs and your LLM bill. It keeps every record. Only confidently low-value, low-priority events may skip a separate analysis branch. Errors, protected records, timeouts, and uncertain answers stay eligible for analysis.
 
-This is a public preview. Production accuracy and savings have not been independently validated. Independent project — not affiliated with TypeSafe, Vercel, GitHub, or OpenTelemetry. The hosted model is TypeSafe’s Jev via Vercel AI Gateway; this repository is the integration SDK.
+This is a public preview. Production accuracy and savings have not been independently validated. Independent project. Not affiliated with TypeSafe, Vercel, GitHub, or OpenTelemetry. The hosted model is TypeSafe's Jev via Vercel AI Gateway. This repository is the integration SDK.
 
 Canonical site: https://jevlogs.com
 Do not send API keys or production logs to the website. Live evaluation uses `AI_GATEWAY_API_KEY` on your machine.
@@ -24,7 +24,7 @@ Do not send API keys or production logs to the website. Live evaluation uses `AI
 ## Optional
 
 - [TypeSafe Jev announcement](https://typesafe.ai/blog/introducing-system-one-models-and-jev): Model pricing and evaluate API
-- [Vercel AI Gateway — Jev](https://vercel.com/ai-gateway/models/jev): Hosted model access
+- [Vercel AI Gateway, Jev](https://vercel.com/ai-gateway/models/jev): Hosted model access
 - [MIT license](https://github.com/reachjalil/jevlogs/blob/main/LICENSE)
 
 ---
@@ -49,7 +49,7 @@ Jev Logs does **not** store logs, delete archives, or replace your exporter. Eve
 2. Diagnostic value is 25 or below (0–100 rubric)
 3. Actionable probability is below `retainBelow` (default `0.1`)
 
-ERROR/FATAL/CRITICAL records and `jev.protected` records always stay eligible for analysis. Timeouts, malformed answers, and provider failures also stay eligible (`reason: unavailable`). Fallback value `100` means “conservatively keep,” not model certainty.
+ERROR/FATAL/CRITICAL records and `jev.protected` records always stay eligible for analysis. Timeouts, malformed answers, and provider failures also stay eligible (`reason: unavailable`). Fallback value `100` means "conservatively keep", not model certainty.
 
 ## Try it
 
