@@ -10,14 +10,14 @@ const onGuide = path.startsWith('/guide');
       <span class="mark" aria-hidden="true">
         <Logo />
       </span>
-      jev logs
+      <span class="wordmark">Jev Logs</span>
     </a>
     <nav aria-label="Main navigation">
-      <a href="/#sort">Sort logs</a>
+      <a class="nav-compact" href="/#demo">Demo</a>
       <a class="nav-optional" href="/#how">How it works</a>
-      <a href="/#savings">Savings</a>
+      <a class="nav-compact" href="/#savings">Estimate</a>
       <a href="/guide/" aria-current={onGuide ? 'page' : undefined}>Guide</a>
     </nav>
-    <a class="github" href={repo} rel="noopener noreferrer">GitHub ↗</a>
+    <a class="github" href={repo} rel="noopener noreferrer">GitHub</a>
   </div>
 </header>
