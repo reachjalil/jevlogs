@@ -83,3 +83,5 @@ Astro emits `site/dist` for any static host. No backend or secret is needed for 
 ## Release
 
 See [release checklist and announcement](docs/release.md). Run `pnpm test`, the Astro build, and an authenticated synthetic live smoke before claiming live validation. Publish the npm tarball only after confirming package name ownership. MIT license applies to Jev Logs, not the model or upstream private CloudBash repository.
+
+Website deployed on [Cloudflare](https://jevlogs.workspaceagent.workers.dev). Custom domain setup for `jevlogs.com` is pending; see [deployment guide](docs/deployment.md).

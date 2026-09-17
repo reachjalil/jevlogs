@@ -116,7 +116,12 @@ export class JevLogExporter implements LogRecordExporter {
         const record = records[index]!;
         const decision = await this.triage({ body: record.body, severityNumber: record.severityNumber, severityText: record.severityText, protected: record.attributes['jev.protected'] === true });
         if (this.options.mode === 'analysis-only' && decision.route === 'retain') continue;
-        output[index] = { ...record, attributes: { ...record.attributes, 'jev.value': decision.value, 'jev.priority': decision.priority, 'jev.route': decision.route, 'jev.reason': decision.reason, ...(decision.actionableProbability === null ? {} : { 'jev.actionable_probability': decision.actionableProbability }) } };
+        output[index] = {
+          body: record.body, severityNumber: record.severityNumber, severityText: record.severityText,
+          hrTime: record.hrTime, hrTimeObserved: record.hrTimeObserved,
+          spanContext: record.spanContext, eventName: record.eventName,
+          resource: record.resource, instrumentationScope: record.instrumentationScope,
+          droppedAttributesCount: record.droppedAttributesCount, attributes: { ...record.attributes, 'jev.value': decision.value, 'jev.priority': decision.priority, 'jev.route': decision.route, 'jev.reason': decision.reason, ...(decision.actionableProbability === null ? {} : { 'jev.actionable_probability': decision.actionableProbability }) } };
       }
     }));
     this.classifying = false;

@@ -52,6 +52,10 @@ test('real LoggerProvider/BatchLogRecordProcessor emits enriched records',async(
  await provider.shutdown();
  assert.equal(downstream.batches[0][0].attributes['jev.value'],0);
  assert.equal(downstream.batches[0][0].attributes.original,'yes');
+ assert.equal(downstream.batches[0][0].body,'test');
+ assert.equal(downstream.batches[0][0].severityNumber,9);
+ assert.equal(downstream.batches[0][0].hrTime.length,2);
+ assert.equal(downstream.batches[0][0].hrTimeObserved.length,2);
  assert.equal(downstream.batches[0][0].instrumentationScope.name,'integration');
 });
 test('concurrency bounded, shutdown drains and exporter failures propagate',async()=>{
