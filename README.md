@@ -384,6 +384,18 @@ The default redactor transforms the **model-bound copy**, not the original recor
 
 The AI SDK’s `experimental_evaluate` API is pinned and experimental. Jev is a hosted model; this repository makes the **integration SDK** open source. This is an independent project, not an official GitHub, TypeSafe, Vercel, or OpenTelemetry product.
 
+## Agent skill
+
+Coding agents can learn this workflow from the [`jevlogs` skill](skills/jevlogs/SKILL.md) in this repository. It covers choosing an entry point, reading decisions, wiring the archive and analysis branches, handling real logs safely, measuring recall and cost before filtering, and troubleshooting, with runnable examples under [`skills/jevlogs/examples/`](skills/jevlogs/examples/).
+
+Install it with the [skills CLI](https://skills.sh) into Claude Code, Cursor, Codex, or any supported agent:
+
+```sh
+npx skills add reachjalil/jevlogs --skill jevlogs
+```
+
+Then ask your agent things like "use Jev to prioritize these logs", "add Jev Logs to my OpenTelemetry pipeline", or "estimate what routing would save us". Run `npx skills add reachjalil/jevlogs --list` to see it before installing. Copying the `skills/jevlogs` folder into your agent's skills directory works too.
+
 ## Build with us
 
 Small improvements welcome: integration examples, clearer docs, reproducible bugs, and evaluations on synthetic or sanitized logs. Please don’t attach credentials or sensitive production logs to issues.
