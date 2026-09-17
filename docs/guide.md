@@ -1,6 +1,6 @@
 # Five-minute integration
 
-1. Install from the source tarball (see README); install `@opentelemetry/sdk-logs@0.222.0` in your application.
+1. Run `pnpm add jevlogs @opentelemetry/sdk-logs@0.222.0`. To try the offline demo first, run `npx jevlogs`; use `npx jevlogs --live` with your Gateway key for real inference.
 2. Set `AI_GATEWAY_API_KEY` in your server environment. Confirm your Gateway account has Jev access.
 3. Wrap your current exporter in `new JevLogExporter({ exporter })`, inside `BatchLogRecordProcessor`. Use a batch size of 16 and export timeout ≥15 seconds.
 4. Start in the default `annotate` mode. Inspect `jev.value`, `jev.priority`, `jev.route`, `jev.reason`, and `jev.actionable_probability` in your normal backend.

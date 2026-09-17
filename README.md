@@ -12,18 +12,32 @@ An MIT-licensed TypeScript SDK that uses [TypeSafe's Jev](https://typesafe.ai/) 
 
 **v0.1 preview.** The SDK builds and is locally tested. Live Jev access and accuracy on production logs have not been certified. The `experimental_evaluate` dependency is experimental and pinned. Jev is a hosted model; only this SDK is open source. No affiliation with TypeSafe, Vercel, or OpenTelemetry.
 
-## Start from source
-
-Node.js 22+, pnpm 10.15.1. The npm name is proposed; no npm release has been published.
+## Try it in one command
 
 ```sh
-git clone https://github.com/reachjalil/jevlogs.git
-cd jevlogs
-pnpm install --frozen-lockfile
-pnpm test
-pnpm pack
-# In your application: pnpm add /path/to/jevlogs/jevlogs-0.1.0.tgz
+npx jevlogs
 ```
+
+The default is a clearly labeled **offline sample demo**: no API key, no network, no real inference. To try real Jev, set `AI_GATEWAY_API_KEY` in your environment and run:
+
+```sh
+npx jevlogs --live
+npx jevlogs --live --file ./app.log --limit 20
+cat app.jsonl | npx jevlogs --live --stdin --json
+```
+
+Live mode sends redacted log bodies to Vercel AI Gateway / TypeSafe and incurs provider charges. Files remain unchanged. `--json` emits decisions as JSONL without raw bodies; headers and summaries go to stderr. Supports plain text or JSONL (`body`/`message`, `severityNumber`, `severityText`/`level`, `protected`). Default 20 records, maximum 100; 1 MiB input cap. Provider failures keep records eligible for analysis and exit with code 2. Usage/input failures exit 1. `--help` lists all options.
+
+## Install the library
+
+```sh
+pnpm add jevlogs @opentelemetry/sdk-logs@0.222.0
+# or: npm install jevlogs @opentelemetry/sdk-logs@0.222.0
+```
+
+Node.js 22+. The OpenTelemetry peer is optional for standalone `createJevLogs()` and CLI usage; install it when using the OTel integration. Library imports have no CLI side effects.
+
+For contributors: clone this repo, run `pnpm install --frozen-lockfile`, then `pnpm test`. Build an installable archive with `pnpm pack`.
 
 Set `AI_GATEWAY_API_KEY` in your server environment. Obtain access through [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev). Never put the key in frontend code. Logs selected for evaluation leave your process for the Gateway and TypeSafe; install a domain-specific redactor first. Default redaction covers common labeled secrets, Bearer tokens, and email addresses, not every kind of sensitive data. Only body and severity are sent; arbitrary OTel attributes are not sent. Protected/error records bypass the model.
 
@@ -82,6 +96,6 @@ Astro emits `site/dist` for any static host. No backend or secret is needed for 
 
 ## Release
 
-See [release checklist and announcement](docs/release.md). Run `pnpm test`, the Astro build, and an authenticated synthetic live smoke before claiming live validation. Publish the npm tarball only after confirming package name ownership. MIT license applies to Jev Logs, not the model or upstream private CloudBash repository.
+See [release checklist and announcement](docs/release.md). Run `pnpm test`, the Astro build, and an authenticated synthetic live smoke before claiming live validation. The npm package and npx command share the same versioned release. MIT license applies to Jev Logs, not the model or upstream private CloudBash repository.
 
 Website deployed on [Cloudflare](https://jevlogs.workspaceagent.workers.dev). Custom domain setup for `jevlogs.com` is pending; see [deployment guide](docs/deployment.md).

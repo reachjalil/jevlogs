@@ -1,17 +1,17 @@
-# v0.1 release
+# v0.1.1 — npm library + npx CLI
 
-- TypeScript SDK, Astro website, integration guide, MIT license.
-- Locally tested contracts; no live Jev certification or production savings benchmark.
-- AI SDK experimental evaluation API pinned to 7.0.105.
-- Before npm publishing: confirm package ownership, run tests/build, inspect `pnpm pack` output, supply Gateway access for a synthetic smoke, choose exact package name, then `pnpm publish --access public`.
-- Website: build `pnpm --filter jevlogs-site build`; publish `site/dist` with any static host. GitHub Actions builds the source on push; it does not publish npm automatically.
+The root package is the functional release. `npm-placeholder/` is historical reservation material, ignored by Git and excluded from the release.
 
-## Announcement draft
+- `npm install jevlogs`: typed SDK imports.
+- `npx jevlogs`: labeled offline sample demo without credentials or network.
+- `npx jevlogs --live`: real Jev sample evaluation using AI_GATEWAY_API_KEY.
+- `npx jevlogs --live --file app.log` or `--stdin --json`: bounded custom log evaluation.
+- OpenTelemetry is optional for the standalone API/CLI; install the peer for the exporter integration.
 
-Introducing Jev Logs: an open-source TypeScript layer for OpenTelemetry that uses Jev to decide which logs deserve expensive LLM analysis.
+## Publish
 
-Score diagnostic value, prioritize failures, and route only the useful signal to your reasoning model. Start with annotations; keep your existing archive. Errors, protected records, uncertainty, and provider failures stay on the analysis path.
+Run `pnpm test`, `pnpm check:examples`, `pnpm site:build`, `pnpm pack`, then test the packed CLI in a clean directory. Publish the inspected archive with `npm publish ./jevlogs-0.1.1.tgz --access public --tag latest`. Verify npm's latest version and run the public npx command before claiming availability.
 
-Built with Vercel AI SDK. MIT licensed. Astro docs + an adjustable savings calculator. This is v0.1: bring your Gateway key and benchmark it on your own logs.
+## Announcement
 
-Source: https://github.com/reachjalil/jevlogs
+Jev Logs is on npm. Try `npx jevlogs` for an offline walkthrough, then add `--live` and your Gateway key to evaluate logs with Jev. Use `npm install jevlogs` to add value scoring and prioritization to your OpenTelemetry pipeline. MIT licensed, built with Vercel AI SDK. v0.1 preview: measure incident recall and savings on your own workload.
