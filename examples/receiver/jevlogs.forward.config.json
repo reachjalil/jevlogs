@@ -1,0 +1,12 @@
+{
+  "envFile": ".env",
+  "port": 4318,
+  "forwardUrl": "http://127.0.0.1:4320/v1/logs",
+  "forwardMode": "annotate",
+  "rules": [
+    { "name": "health", "match": "^GET /health", "route": "retain" },
+    { "name": "audit", "match": "\\baudit\\b", "flags": "i", "route": "analyze" }
+  ],
+  "cacheSize": 1000,
+  "cacheTtlMs": 300000
+}

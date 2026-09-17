@@ -60,7 +60,7 @@ test('real LoggerProvider/BatchLogRecordProcessor emits enriched records',async(
 });
 test('concurrency bounded, shutdown drains and exporter failures propagate',async()=>{
  let active=0,max=0;const downstream=target();const exporter=new JevLogExporter({exporter:downstream,concurrency:2,evaluator:async()=>{active++;max=Math.max(active,max);await new Promise(r=>setTimeout(r,3));active--;return low();}});
- const pending=send(exporter,Array.from({length:7},()=>makeRecord()));await exporter.shutdown();await pending;assert.equal(max,2);assert.equal(downstream.batches[0].length,7);
+ const pending=send(exporter,Array.from({length:7},(_,i)=>makeRecord(`record ${i}`)));await exporter.shutdown();await pending;assert.equal(max,2);assert.equal(downstream.batches[0].length,7);
  const failed=new JevLogExporter({exporter:{...target(),export(){throw Error('delivery')}},evaluator:low});assert.equal((await send(failed,[makeRecord()])).code,1);
 });
 test('savings includes triage overhead, output, negative savings, and validation',()=>{
@@ -70,4 +70,45 @@ test('savings includes triage overhead, output, negative savings, and validation
  assert.equal(estimateSavings({...args,logs:0}).percent,0);
  assert.throws(()=>estimateSavings({...args,retainedFraction:2}));
  assert.throws(()=>createJevLogs({retainBelow:.6}));
+});
+test('identical redacted inputs are served from the cache; TTL and disabling are honored',async()=>{
+ let calls=0;const evaluator=async()=>{calls++;return low();};
+ const jev=createJevLogs({evaluator});
+ const first=await jev.triage({body:'GET /health 200 user@example.com'});
+ const second=await jev.triage({body:'GET /health 200 other@example.com'}); // same after redaction
+ assert.equal(calls,1);assert.equal(first.cached,false);assert.equal(second.cached,true);assert.equal(second.route,'retain');
+ assert.equal(jev.stats().cached,1);assert.equal(jev.stats().model,1);assert.equal(jev.stats().cacheEntries,1);
+ const expiring=createJevLogs({evaluator,cache:{ttlMs:5}});await expiring.triage({body:'x'});await new Promise(r=>setTimeout(r,10));await expiring.triage({body:'x'});
+ assert.equal(calls,3);
+ const off=createJevLogs({evaluator,cache:false});await off.triage({body:'y'});await off.triage({body:'y'});assert.equal(calls,5);
+ const tiny=createJevLogs({evaluator,cache:{maxEntries:1}});await tiny.triage({body:'a'});await tiny.triage({body:'b'});await tiny.triage({body:'a'});assert.equal(calls,8);
+ assert.throws(()=>createJevLogs({cache:{maxEntries:-1}}));
+});
+test('failures are never cached; protected records skip the cache',async()=>{
+ let calls=0;const jev=createJevLogs({evaluator:async()=>{calls++;throw Error('down');}});
+ assert.equal((await jev.triage({body:'x'})).reason,'unavailable');assert.equal((await jev.triage({body:'x'})).cached,false);assert.equal(calls,2);
+ assert.equal((await jev.triage({body:'x',severityText:'ERROR'})).cached,false);assert.equal(jev.stats().protected,1);assert.equal(jev.stats().unavailable,2);
+});
+test('rules decide before the model, never override protection, and are validated',async()=>{
+ let calls=0;const evaluator=async()=>{calls++;return {value:100,priority:'critical',actionableProbability:0.99};};
+ const jev=createJevLogs({evaluator,rules:[{name:'health',match:'^GET /health',route:'retain'},{match:'audit',flags:'i',route:'analyze'}]});
+ const noise=await jev.triage({body:'GET /health 200'});assert.deepEqual(noise,{value:0,priority:'low',route:'retain',actionableProbability:null,reason:'rule',rule:'health',cached:false});
+ const audit=await jev.triage({body:'AUDIT role changed'});assert.equal(audit.route,'analyze');assert.equal(audit.reason,'rule');assert.equal(audit.rule,'rule-2');
+ assert.equal(calls,0);
+ assert.equal((await jev.triage({body:'GET /health 500',severityText:'ERROR'})).reason,'protected');
+ assert.equal((await jev.triage({body:'checkout timeout'})).reason,'model');assert.equal(calls,1);
+ assert.equal(jev.stats().rules,2);
+ for(const rules of [[{match:'(',route:'retain'}],[{match:'x',route:'drop'}],[{match:'x',flags:'g',route:'retain'}],[{match:'',route:'retain'}],'nope'])assert.throws(()=>createJevLogs({rules}),RangeError);
+ const re=createJevLogs({evaluator,rules:[{match:/cache hit/gi,route:'retain'}]});
+ assert.equal((await re.triage({body:'Cache HIT product'})).route,'retain');assert.equal((await re.triage({body:'Cache HIT product'})).route,'retain');
+});
+test('exporter coalesces identical in-flight records and annotates cache and rule attributes',async()=>{
+ let calls=0;const counted=async()=>{calls++;await new Promise(r=>setTimeout(r,3));return low();};
+ const downstream=target();const exporter=new JevLogExporter({exporter:downstream,evaluator:counted,rules:[{name:'noise',match:'ping',route:'retain'}]});
+ await send(exporter,[makeRecord('health ok'),makeRecord('health ok'),makeRecord('ping')]);
+ const [a,b,c]=downstream.batches[0];
+ assert.equal('jev.cached' in a.attributes,false);assert.equal(b.attributes['jev.cached'],true);assert.equal(c.attributes['jev.rule'],'noise');assert.equal(c.attributes['jev.reason'],'rule');
+ assert.equal(exporter.stats().cached,1);assert.equal(calls,1);
+ const failing=createJevLogs({evaluator:async()=>{await new Promise(r=>setTimeout(r,3));throw Error('down');}});
+ const [x,y]=await Promise.all([failing.triage({body:'same'}),failing.triage({body:'same'})]);assert.equal(x.reason,'unavailable');assert.equal(y.reason,'unavailable');
 });

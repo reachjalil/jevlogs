@@ -18,8 +18,9 @@
 </p>
 
 <p align="center">
-  <a href="https://jevlogs.workspaceagent.workers.dev"><strong>Website</strong></a> ·
-  <a href="https://jevlogs.workspaceagent.workers.dev/guide/"><strong>Guide</strong></a> ·
+  <a href="https://jevlogs.com"><strong>Website</strong></a> ·
+  <a href="https://jevlogs.com/guide/"><strong>Guide</strong></a> ·
+  <a href="https://jevlogs.com/llms.txt"><strong>llms.txt</strong></a> ·
   <a href="https://www.npmjs.com/package/jevlogs"><strong>npm</strong></a> ·
   <a href="https://github.com/reachjalil/jevlogs/issues"><strong>Feedback</strong></a>
 </p>
@@ -79,6 +80,11 @@ The default config is read from your current working directory. Use `--config ./
 | `retainBelow` | `0.1` | Actionable-probability threshold, from 0 through 0.5; low value and low priority are also required to retain |
 | `timeoutMs` | `2000` | Per-record model timeout; failures remain eligible for analysis |
 | `maxInputChars` | `8000` | Maximum serialized model input; oversized input remains eligible for analysis |
+| `forwardUrl` | None | OTLP HTTP/JSON logs endpoint that receives the annotated batch, for example your Collector at `http://127.0.0.1:4320/v1/logs` |
+| `forwardMode` | `annotate` | `annotate` forwards every record with `jev.*` attributes; `analysis-only` forwards only records routed to analysis |
+| `rules` | `[]` | Regular expressions tested against the redacted body before any model call; first match wins |
+| `cacheSize` | `1000` | Decisions kept in memory, keyed by a hash of the redacted model input; `0` disables the cache |
+| `cacheTtlMs` | `300000` | How long a cached decision stays valid |
 
 ### Send logs from your application
 
@@ -139,6 +145,29 @@ console.log(server.url);
 Only the body and severity go into model input, after the SDK's redaction. Errors and `jev.protected=true` records bypass inference. Resource attributes, scope and trace IDs remain available to your callback. Default redaction is a starting point, not a complete sensitive-data policy.
 
 For a one-time model demonstration instead of starting the receiver, run `npx jevlogs --live --sample`. File and stdin modes still work as finite batches.
+### Forward annotated logs to your collector
+
+Point your application at Jev Logs and Jev Logs at the collector you already run. Every record continues on with `jev.*` attributes attached; nothing is stored in between.
+
+```json
+{
+  "envFile": ".env",
+  "forwardUrl": "http://127.0.0.1:4320/v1/logs",
+  "forwardMode": "annotate",
+  "rules": [
+    { "name": "health", "match": "^GET /health", "route": "retain" }
+  ]
+}
+```
+
+```text
+your app ──OTLP JSON──▶ jevlogs :4318 ──annotated OTLP JSON──▶ collector :4320
+```
+
+Forwarding happens before the local decision output, so an upstream failure returns HTTP 503 with `Retry-After` and your exporter resends the batch. Authentication headers for the upstream come from `OTEL_EXPORTER_OTLP_LOGS_HEADERS` or `OTEL_EXPORTER_OTLP_HEADERS` in the receiver's environment, using the standard `key=value,key=value` syntax. `analysis-only` mode forwards just the records routed to analysis, which is how you feed a separate LLM-analysis pipeline without touching your archive.
+
+Rules run after protection and redaction and before the cache or the model, so known noise costs nothing. A `retain` rule produces `value: 0`, `priority: low`; an `analyze` rule produces the conservative fallback. ERROR/FATAL and `jev.protected` records are never affected by rules. Identical redacted inputs share one model call and are then served from an in-memory cache, marked `cached: true`. `GET /stats` reports requests, records, forwarded batches, cache hits, rule hits, model latency and reported input tokens.
+
 
 ## What you can build today
 
@@ -187,6 +216,9 @@ npx jevlogs --live --file ./app.log --limit 20
 
 # Pipe JSONL in; get machine-readable decisions out
 cat app.jsonl | npx jevlogs --live --stdin --json
+
+# Follow a live stream; each line is evaluated as it arrives
+tail -f app.log | npx jevlogs --live --stdin --follow --json
 ```
 
 Live mode sends redacted log bodies to Vercel AI Gateway / TypeSafe and incurs provider charges. Your files remain unchanged. Get access through [AI Gateway](https://vercel.com/ai-gateway/models/jev).
@@ -196,6 +228,7 @@ Live mode sends redacted log bodies to Vercel AI Gateway / TypeSafe and incurs p
 
 - Accepts plain text or JSONL with `body`/`message`, `severityNumber`, `severityText`/`level`, and `protected`.
 - Processes 20 records by default, up to 100 with `--limit`; total input is capped at 1 MiB.
+- `--follow` streams stdin line by line with no record limit, four evaluations in flight, and ends at EOF.
 - `--json` emits one decision per line without raw bodies. Headers and summaries go to stderr.
 - Provider failures conservatively keep records for analysis and exit with code `2`.
 - Usage and input errors exit with code `1`.
@@ -296,14 +329,19 @@ ERROR/FATAL records and records marked `jev.protected: true` always remain eligi
 | `priority` | `critical`, `high`, `normal`, or `low`. |
 | `route` | `analyze` or `retain`. |
 | `actionableProbability` | Jev’s boolean estimate; `null` when no model decision is available. |
-| `reason` | `model`, `protected`, `uncertain`, or `unavailable`. |
+| `reason` | `model`, `protected`, `uncertain`, `unavailable`, or `rule`. |
+| `cached` | `true` when served from the local decision cache instead of a new model call. |
+| `rule` | Name of the matching configured rule when `reason` is `rule`. |
 
 ```ts
 const jev = createJevLogs({
   retainBelow: 0.1, // 0–0.5; 0 disables analysis bypass
   timeoutMs: 2000,
   maxInputChars: 8000,
+  rules: [{ name: 'health', match: '^GET /health', route: 'retain' }],
+  cache: { maxEntries: 1000, ttlMs: 300_000 }, // or false
 });
+jev.stats(); // decisions, model calls, cache hits, rule hits, latency, input tokens
 ```
 
 The exporter defaults to four concurrent requests, configurable from 1–32. Use OTel batches of 16; larger batches may exceed export deadlines. Overlapping exports bypass scoring and forward all records unchanged. Consumers should analyze records with missing decisions.
@@ -361,11 +399,11 @@ Keep Gateway credentials on the server. Mark audit, security, and compliance rec
 
 ## Current scope and limits
 
-This release handles **Node.js log records**. It does not include a hosted dashboard, log storage, a Collector plugin, trace/metric sampling, automatic logger instrumentation, a durable queue, or a downstream reasoning-model client. It does not explain root causes or automatically remediate incidents.
+This release handles **Node.js log records** and OTLP HTTP/JSON from any language through the local receiver. It does not include a hosted dashboard, log storage, a Collector plugin, trace/metric sampling, automatic logger instrumentation, a durable queue, or a downstream reasoning-model client. It does not explain root causes or automatically remediate incidents.
 
-The file/stdin CLI modes process finite input after EOF, up to 1 MiB and 100 selected records. Plain text and simple JSONL are supported in those modes. `--live` alone runs the local OTLP HTTP/JSON receiver documented above. There is no `tail -f` integration or protobuf/gRPC receiver. Numeric logger levels in file inputs require normalization to OTel severity.
+The file/stdin CLI modes process finite input after EOF, up to 1 MiB and 100 selected records. Plain text and simple JSONL are supported in those modes. `--live` alone runs the local OTLP HTTP/JSON receiver documented above. `--stdin --follow` evaluates a live stream line by line. There is no protobuf/gRPC receiver. Numeric logger levels in file inputs require normalization to OTel severity.
 
-The default redactor transforms the **model-bound copy**, not the original record sent to your exporter. Zero-data-retention is requested through Gateway, while your archive policies remain your responsibility. No cache, deduplication, or automatic model retries are implemented.
+The default redactor transforms the **model-bound copy**, not the original record sent to your exporter. Zero-data-retention is requested through Gateway, while your archive policies remain your responsibility. Identical redacted inputs share one model call and are cached in memory for five minutes by default; there are no automatic model retries.
 
 `estimateSavings().retainedFraction` is the fraction **still sent to the downstream LLM**, including protected and uncertain records; it is not your archive retention rate. Start with annotation, measure incident recall and costs, then choose whether to enable filtering.
 
@@ -375,14 +413,18 @@ The default redactor transforms the **model-bound copy**, not the original recor
 
 | Component | Status |
 | :--- | :--- |
-| npm library and `npx jevlogs` CLI | Available in `jevlogs@0.2.0` |
-| OpenTelemetry Logs integration | Annotation + optional analysis-branch routing |
+| npm library and `npx jevlogs` CLI | Available in `jevlogs@0.3.0` |
+| OpenTelemetry Logs integration | Annotation, analysis-branch routing, local OTLP receiver with forwarding |
 | Astro website and guide | [Deployed on Cloudflare](https://jevlogs.workspaceagent.workers.dev) |
 | Automated checks | [Live CI status](https://github.com/reachjalil/jevlogs/actions/workflows/ci.yml) |
 | Live Jev accuracy and production savings | Not yet independently validated for this project |
 | `jevlogs.com` | Domain connection pending |
 
 The AI SDK’s `experimental_evaluate` API is pinned and experimental. Jev is a hosted model; this repository makes the **integration SDK** open source. This is an independent project, not an official GitHub, TypeSafe, Vercel, or OpenTelemetry product.
+
+## Launch artwork
+
+[Download the compact “Introducing Jev Logs” image](site/public/images/introducing-jevlogs.jpg). Both the launch card and README banner carry a `jevlogs.com` signature.
 
 ## Agent skill
 

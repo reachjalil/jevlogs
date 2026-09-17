@@ -2,7 +2,7 @@
 
 Jev Logs is a small decision layer before expensive LLM log analysis. Use it from a terminal, in a TypeScript job, or inside your existing Node.js OpenTelemetry Logs pipeline. It assigns diagnostic value, urgency, and an analysis recommendation. Your existing system remains responsible for storing logs, delivering events, and running deeper analysis.
 
-**Current release: 0.2.0, public preview.** The SDK and CLI are on npm. The default demo is offline; live evaluation needs `AI_GATEWAY_API_KEY` and Jev access through Vercel AI Gateway. Production accuracy and savings have not been independently validated for this project.
+**Current release: 0.3.0, public preview.** The SDK and CLI are on npm. The default demo is offline; live evaluation needs `AI_GATEWAY_API_KEY` and Jev access through Vercel AI Gateway. Production accuracy and savings have not been independently validated for this project.
 
 ## Start a local OpenTelemetry receiver with one config
 
@@ -43,6 +43,11 @@ The default config is read from your current working directory. Use `--config ./
 | `retainBelow` | `0.1` | Actionable-probability threshold, from 0 through 0.5; low value and low priority are also required to retain |
 | `timeoutMs` | `2000` | Per-record model timeout; failures remain eligible for analysis |
 | `maxInputChars` | `8000` | Maximum serialized model input; oversized input remains eligible for analysis |
+| `forwardUrl` | None | OTLP HTTP/JSON logs endpoint that receives the annotated batch, for example your Collector at `http://127.0.0.1:4320/v1/logs` |
+| `forwardMode` | `annotate` | `annotate` forwards every record with `jev.*` attributes; `analysis-only` forwards only records routed to analysis |
+| `rules` | `[]` | Regular expressions tested against the redacted body before any model call; first match wins |
+| `cacheSize` | `1000` | Decisions kept in memory, keyed by a hash of the redacted model input; `0` disables the cache |
+| `cacheTtlMs` | `300000` | How long a cached decision stays valid |
 
 ### Send logs from your application
 
@@ -103,6 +108,31 @@ console.log(server.url);
 Only the body and severity go into model input, after the SDK's redaction. Errors and `jev.protected=true` records bypass inference. Resource attributes, scope and trace IDs remain available to your callback. Default redaction is a starting point, not a complete sensitive-data policy.
 
 For a one-time model demonstration instead of starting the receiver, run `npx jevlogs --live --sample`. File and stdin modes still work as finite batches.
+### Forward annotated logs to your collector
+
+Point your application at Jev Logs and Jev Logs at the collector you already run. Every record continues on with `jev.*` attributes attached; nothing is stored in between.
+
+```json
+{
+  "envFile": ".env",
+  "forwardUrl": "http://127.0.0.1:4320/v1/logs",
+  "forwardMode": "annotate",
+  "rules": [
+    { "name": "health", "match": "^GET /health", "route": "retain" }
+  ]
+}
+```
+
+```text
+your app ──OTLP JSON──▶ jevlogs :4318 ──annotated OTLP JSON──▶ collector :4320
+```
+
+Forwarding happens before the local decision output, so an upstream failure returns HTTP 503 with `Retry-After` and your exporter resends the batch. Authentication headers for the upstream come from `OTEL_EXPORTER_OTLP_LOGS_HEADERS` or `OTEL_EXPORTER_OTLP_HEADERS` in the receiver's environment, using the standard `key=value,key=value` syntax. `analysis-only` mode forwards just the records routed to analysis, which is how you feed a separate LLM-analysis pipeline without touching your archive.
+
+Rules run after protection and redaction and before the cache or the model, so known noise costs nothing. A `retain` rule produces `value: 0`, `priority: low`; an `analyze` rule produces the conservative fallback. ERROR/FATAL and `jev.protected` records are never affected by rules. Identical redacted inputs share one model call and are then served from an in-memory cache, marked `cached: true`. `GET /stats` reports requests, records, forwarded batches, cache hits, rule hits, model latency and reported input tokens.
+
+The embedded server accepts the same options: `forwardUrl`, `forwardMode`, `forwardHeaders`, `forwardTimeoutMs`, `rules`, `cache`, `concurrency` (model evaluations in flight, default 4) and `maxRequests` (requests accepted at once, default 8). `onLog` is optional when `forwardUrl` is set. `startJevLogsServer()` returns `stats()` alongside `url` and `close()`.
+
 
 ## Choose your starting point
 
@@ -112,6 +142,8 @@ For a one-time model demonstration instead of starting the receiver, run `npx je
 | Try the actual model | `npx jevlogs --live --sample` | Jev evaluates the included sample logs; errors bypass the model |
 | Inspect a log file | `--live --file app.log` | A bounded, one-time triage of text or JSONL |
 | Feed decisions into a script | `--live --stdin --json` | One decision per input record on stdout |
+| Watch a live stream | `--live --stdin --follow --json` | Each line evaluated as it arrives until EOF |
+| Put triage in front of your collector | `forwardUrl` in `jevlogs.config.json` | Annotated OTLP records forwarded; noise handled by rules and cache |
 | Add triage to an existing queue | `createJevLogs().triage()` | A typed decision your application can act on |
 | See scores in your observability backend | `JevLogExporter`, `annotate` mode | Every record exported with `jev.*` annotations |
 | Reduce calls to your analysis model | A separate `analysis-only` branch | Confidently low-value records skip that branch |
@@ -132,6 +164,7 @@ For actual inference, set your Gateway key through your shell's environment or s
 npx jevlogs --live --sample
 npx jevlogs --live --file ./app.log --limit 20
 cat ./app.jsonl | npx jevlogs --live --stdin --json > decisions.jsonl
+tail -f ./app.log | npx jevlogs --live --stdin --follow --json
 ```
 
 The key is read from `AI_GATEWAY_API_KEY`; there is no API-key command-line flag. Live mode sends redacted log bodies and severity to Vercel AI Gateway / TypeSafe and incurs provider charges. Your input file is never modified.
@@ -168,17 +201,18 @@ JSONL: one JSON value per line. Objects can use these fields:
 | `--port <number>` | Override the local receiver port |
 | `--file <path>` | Read a text or JSONL file; requires `--live` |
 | `--stdin` | Read stdin until EOF; requires `--live` |
-| `--limit <1–100>` | Maximum records processed; default 20 |
+| `--follow` | With `--stdin`: evaluate each line as it arrives, no record limit, four evaluations in flight |
+| `--limit <1–100>` | Maximum records processed; default 20; ignored with `--follow` |
 | `--json` | JSONL decisions on stdout, summaries on stderr |
 | `--help`, `-h` | Print usage |
 | `--version`, `-v` | Print package version |
 
-Total input is limited to 1 MiB. Each selected input line is limited to 8,000 characters; the SDK also caps its serialized model state at 8,000 characters. More than the selected record limit triggers a stderr notice and only the first records are processed. File/stdin mode is a finite batch tool, not a continuous `tail -f` agent: stdin is consumed until EOF before triage starts.
+Total input is limited to 1 MiB. Each selected input line is limited to 8,000 characters; the SDK also caps its serialized model state at 8,000 characters. More than the selected record limit triggers a stderr notice and only the first records are processed. Without `--follow`, file/stdin mode is a finite batch: stdin is consumed until EOF before triage starts. With `--follow`, each non-empty line is evaluated as it arrives, output order follows completion, oversized or malformed lines are reported on stderr and skipped, and the summary prints at EOF.
 
 `--json` omits raw bodies. Example from the **offline demo**:
 
 ```json
-{"line":1,"mode":"demo","value":0,"priority":"low","actionableProbability":0.01,"route":"retain","reason":"model"}
+{"line":1,"mode":"demo","value":0,"priority":"low","actionableProbability":0.01,"route":"retain","reason":"model","cached":false}
 ```
 
 `line` is the one-based processed record index after blank lines are removed, not necessarily the physical file line number. `mode` distinguishes sample answers from live mode. In live mode, `reason: "protected"` means the local protection rule ran without calling the model.
@@ -227,7 +261,9 @@ The standalone API has no OpenTelemetry runtime dependency. The package's export
 | `priority` | `critical`, `high`, `normal`, or `low` |
 | `route` | `analyze` for deeper analysis; `retain` for keeping in your archive without that analysis |
 | `actionableProbability` | Boolean probability that deeper investigation would be useful; `null` when there is no model answer |
-| `reason` | `model`, `protected`, `uncertain`, or `unavailable` |
+| `reason` | `model`, `protected`, `uncertain`, `unavailable`, or `rule` |
+| `cached` | `true` when served from the local decision cache or shared with an identical in-flight evaluation |
+| `rule` | Name of the matching configured rule when `reason` is `rule` |
 
 The rubric describes no useful signal, low diagnostic detail, moderate context, actionable failure evidence, and incident-defining evidence. Jev's score is mapped by multiplying it by 25. A fallback value of 100 is a conservative policy value, not an inferred judgment or certainty.
 
@@ -248,8 +284,10 @@ All other records receive `analyze`. A record recommended for analysis can still
 | `maxInputChars` | `8000` | Maximum serialized state length before and after redaction |
 | `redact` | `redactCommonSecrets` | Synchronous text transform before model transmission |
 | `evaluator` | Jev through AI Gateway | Injectable evaluator for tests or custom integrations |
+| `rules` | `[]` | `{ name?, match, flags?, route }` tested against the redacted body after protection, before cache and model; first match wins |
+| `cache` | 1,000 entries, 5 minutes | `{ maxEntries, ttlMs }` or `false`; keyed by a SHA-256 of the redacted model input; failures are never cached |
 
-Timeouts, malformed answers, serialization errors, oversized state, redactor failures, and provider failures produce `reason: "unavailable"` with `route: "analyze"`. The SDK does not expose provider error details in the returned decision and performs no automatic retries. Changing the evaluator replaces the model integration; it does not change the conservative routing rules.
+Timeouts, malformed answers, serialization errors, oversized state, redactor failures, and provider failures produce `reason: "unavailable"` with `route: "analyze"`. `stats()` returns counters for decisions, model calls, cache hits, rule hits, protected and unavailable records, routes, model latency, and provider-reported input tokens. The SDK does not expose provider error details in the returned decision and performs no automatic retries. Changing the evaluator replaces the model integration; it does not change the conservative routing rules.
 
 ## 3. Annotate your OpenTelemetry logs
 
@@ -295,6 +333,8 @@ The wrapper exports a new record preserving the original body, timestamps, sever
 | `jev.route` | `analyze` or `retain` |
 | `jev.reason` | Decision reason |
 | `jev.actionable_probability` | Probability when a model answer exists; otherwise omitted on ordinary input |
+| `jev.cached` | `true` only when the decision came from the cache or a shared in-flight evaluation |
+| `jev.rule` | Matching rule name, only when a rule decided |
 
 Reserve `jev.*` for this integration. Default mode is `annotate`: every record is exported, so annotation alone does not reduce downstream model calls or storage charges.
 
@@ -399,13 +439,15 @@ Pricing references, checked September 16, 2026: [TypeSafe's launch announcement]
 | Every ERROR gets value 100 | The local protection rule bypasses the model and conservatively selects analysis. |
 | All logs still appear in the backend | Expected in annotation mode. Inspect `jev.*` attributes or use a separate analysis branch. |
 | Some logs have no annotations | Overlapping export calls are forwarded unchanged. Treat missing decisions as analyze. |
-| `tail -f` never returns results | The CLI waits for EOF. Use a finite file/snapshot, or integrate the SDK in a bounded worker. |
+| `tail -f` never returns results | Without `--follow` the CLI waits for EOF. Add `--follow` to evaluate lines as they arrive. |
+| Receiver answers 503 | Forwarding to `forwardUrl` failed, or more than `maxRequests` batches were in flight. Retry-capable exporters resend the batch. Check `GET /stats`. |
+| A noisy line still reaches the model | Rules match the redacted body text, not the whole JSON record; check the pattern and remember protected records bypass rules. |
 | Numeric logger levels do not protect errors | Normalize to OTel `severityNumber` or a string `severityText`; arbitrary logger numbering is not translated. |
 | A TypeScript declaration cannot resolve OTel | Install `@opentelemetry/sdk-logs@0.222.0`, which provides the exporter's referenced types. |
 
 ## What this release does not include
 
-No hosted dashboard, log database, automatic logger instrumentation, Collector plugin, span or metric processing, continuous CLI tailing, deduplication/cache, durable queue, root-cause explanation, or built-in downstream LLM analysis. CLI output is a triage result, not a measured cost report. The model is hosted by TypeSafe; the SDK is the open-source component.
+No hosted dashboard, log database, automatic logger instrumentation, Collector plugin, span or metric processing, durable queue, persistent cache, root-cause explanation, or built-in downstream LLM analysis. CLI output is a triage result, not a measured cost report. The model is hosted by TypeSafe; the SDK is the open-source component.
 
 ## Suggested rollout
 

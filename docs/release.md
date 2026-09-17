@@ -1,4 +1,10 @@
-# v0.1.1 — npm library + npx CLI
+# Releases
+
+## v0.3.0 — forwarding receiver, rules, cache, streaming CLI
+
+See CHANGELOG.md. Publish with the same steps as below, using `./jevlogs-0.3.0.tgz`.
+
+## v0.1.1 — npm library + npx CLI
 
 The root package is the functional release. `npm-placeholder/` is historical reservation material, ignored by Git and excluded from the release.
 

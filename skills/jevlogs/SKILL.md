@@ -46,7 +46,7 @@ Every entry point returns the same `Decision` shape:
   priority: 'critical'|'high'|'normal'|'low',
   route: 'analyze'|'retain',          // the recommendation your pipeline acts on
   actionableProbability: number|null, // Jev's boolean probability; null when no model answer
-  reason: 'model'|'protected'|'uncertain'|'unavailable' }
+  reason: 'model'|'protected'|'uncertain'|'unavailable'|'rule', cached: boolean, rule?: string }
 ```
 
 Under the hood one `experimental_evaluate` call asks Jev a boolean question (is deeper investigation useful), a choice question (priority), and a five-level score question (diagnostic value, multiplied by 25). `route` is derived locally, and it is conservative: a record gets `retain` only when priority is `low`, value is at most 25, and the probability is below `retainBelow` (default 0.1). Everything else is `analyze`.

@@ -1,4 +1,4 @@
-# jevlogs API reference (verified against jevlogs 0.2.0)
+# jevlogs API reference (verified against jevlogs 0.3.0)
 
 Source of truth: `src/index.ts`, `src/server.ts`, `src/config.ts`, `src/cli.ts` in
 https://github.com/reachjalil/jevlogs. If this file and the code disagree, the code wins.
@@ -38,21 +38,26 @@ interface Decision {
   priority: 'critical'|'high'|'normal'|'low';
   route: 'analyze'|'retain';
   actionableProbability: number|null;  // null when no model answer
-  reason: 'model'|'protected'|'uncertain'|'unavailable';
+  reason: 'model'|'protected'|'uncertain'|'unavailable'|'rule';
+  cached: boolean;   // served from the in-memory decision cache or a shared in-flight evaluation
+  rule?: string;     // matching rule name when reason === 'rule'
 }
 ```
 
 ### Exact decision algorithm
 
-1. If `protected === true`, or `severityNumber >= 17`, or `severityText` matches `ERROR|FATAL|CRITICAL` (case-insensitive): return `{ value: 100, priority: 'critical', route: 'analyze', actionableProbability: null, reason: 'protected' }`. No network call.
+1. If `protected === true`, or `severityNumber >= 17`, or `severityText` matches `ERROR|FATAL|CRITICAL` (case-insensitive): return `{ value: 100, priority: 'critical', route: 'analyze', actionableProbability: null, reason: 'protected', cached: false }`. No network call.
 2. Serialize `{ body, severityText, severityNumber }` with `JSON.stringify`. If longer than `maxInputChars`: `reason: 'unavailable'` fallback.
+2a. (0.3.0) `rules` are tested against the redacted body text; first match returns `reason: 'rule'` (`retain` gives value 0 / low, `analyze` gives the fallback). Then the cache is checked by SHA-256 of the redacted state; hits return `cached: true`. Identical in-flight inputs share one model call.
 3. Run `redact` on that string. If it throws, returns a non-string, or the result exceeds `maxInputChars`: `unavailable` fallback.
 4. Call the evaluator with the redacted string, racing against `timeoutMs`. On timeout the abort signal fires.
 5. Validate the answer: probability in [0,1], value finite in [0,100], priority in the four allowed strings. Anything else: `unavailable` fallback.
 6. `retain = actionableProbability < retainBelow && value <= 25 && priority === 'low'`.
 7. `reason = retain || actionableProbability >= 1 - retainBelow ? 'model' : 'uncertain'`.
 
-The `unavailable` fallback is `{ value: 100, priority: 'high', route: 'analyze', actionableProbability: null, reason: 'unavailable' }`. Provider error details are not exposed. There are no automatic retries (`maxRetries: 0` is passed to the AI SDK).
+The `unavailable` fallback is `{ value: 100, priority: 'high', route: 'analyze', actionableProbability: null, reason: 'unavailable' }`. Provider error details are not exposed. There are no automatic retries (`maxRetries: 0` is passed to the AI SDK). Failures are never cached.
+
+0.3.0 additions: `createJevLogs({ rules, cache })`, `jev.stats()`, `JevLogExporter#stats()`, `startJevLogsServer({ forwardUrl, forwardMode, forwardHeaders, forwardTimeoutMs, concurrency, maxRequests })` with `onLog` optional when forwarding, `GET /stats`, `parseOtlpHeaders()`, `compileRules()`, `decisionAttributes()`, and the CLI flag `--follow` for streaming stdin. Config keys `forwardUrl`, `forwardMode`, `rules`, `cacheSize`, `cacheTtlMs`.
 
 ### What the default evaluator sends
 
@@ -90,6 +95,8 @@ Implements `LogRecordExporter` (`export`, `forceFlush`, `shutdown`). Put it insi
 | `jev.priority` | string |
 | `jev.route` | `analyze` or `retain` |
 | `jev.reason` | string |
+| `jev.cached` | boolean, present only when true |
+| `jev.rule` | string, present only when a rule decided |
 | `jev.actionable_probability` | number; omitted when the decision has `null` |
 
 In `analysis-only` mode, `retain` records are not forwarded. If every record in a batch is retained, the callback succeeds with an empty forward.
