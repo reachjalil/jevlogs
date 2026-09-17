@@ -1,0 +1,7 @@
+{
+  "envFile": ".env",
+  "port": 4318,
+  "retainBelow": 0.1,
+  "timeoutMs": 2000,
+  "maxInputChars": 8000
+}

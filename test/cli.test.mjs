@@ -15,5 +15,5 @@ test('CLI rejects invalid modes, limits, options and implicit custom-data upload
  for(const args of [['--limit','0'],['--limit','101'],['--limit','x'],['--limit'],['--file'],['--demo','--live'],['--stdin'],['--wat']]) assert.equal(run(args).status,1,args.join(' '));
 });
 test('help/version/limit work without credentials',()=>{
- assert.match(run(['--help']).stdout,/npx jevlogs/);assert.equal(run(['--version']).stdout.trim(),'0.1.1');assert.equal(run(['--json','--limit','1']).stdout.trim().split('\n').length,1);
+ assert.match(run(['--help']).stdout,/npx jevlogs/);assert.equal(run(['--version']).stdout.trim(),'0.2.0');assert.equal(run(['--json','--limit','1']).stdout.trim().split('\n').length,1);
 });

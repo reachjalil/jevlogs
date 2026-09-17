@@ -40,6 +40,106 @@ Health checks. Cache hits. A payment failure hiding in the middle. Sending every
 | **Spend selectively** | Route confidently low-value events away from a separate LLM-analysis branch. |
 | **Keep the uncertain ones** | Errors, protected records, ambiguity, and provider failures remain eligible for analysis. |
 
+## Start a local OpenTelemetry receiver with one config
+
+Requires Node.js 22+. Install `npm install jevlogs`, or use `npx` directly. Add **`jevlogs.config.json` at your project root**:
+
+```json
+{
+  "envFile": ".env",
+  "port": 4318,
+  "retainBelow": 0.1,
+  "timeoutMs": 2000,
+  "maxInputChars": 8000
+}
+```
+
+Create `.env` beside it:
+
+```dotenv
+AI_GATEWAY_API_KEY=your-vercel-ai-gateway-key
+```
+
+Add `.env` to your `.gitignore`. Commit the JSON config, not your key. Create a key in your [Vercel AI Gateway dashboard](https://vercel.com/docs/ai-gateway/authentication-and-byok). This is **your Gateway key**, not an OpenAI key or a Jev Logs account. Provider usage is charged to your Gateway account. The AI SDK reads it server-side to authenticate Jev requests. Applications sending OTLP logs do not need this key. The website never receives it.
+
+Run from that project root:
+
+```sh
+npx jevlogs@latest --live
+```
+
+The receiver listens at **`http://127.0.0.1:4318/v1/logs`** and stays running until Ctrl+C. `GET /health` checks the receiver, not model availability. It prints one JSON decision per record to stdout, with available trace/span IDs and timestamp. It does not print raw log bodies or store your logs. Keep your existing archive/export pipeline.
+
+The default config is read from your current working directory. Use `--config ./config/jevlogs.json` for another location; `envFile` resolves relative to that config. Existing environment variables take precedence over `.env`. `--port 4320` overrides the config port. All settings are optional; you can omit `envFile` when your shell or secret manager already supplies `AI_GATEWAY_API_KEY`. Unknown configuration keys fail clearly. Never put an API key directly in the JSON.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `envFile` | None | Local dotenv file to load; explicit missing files fail startup |
+| `port` | `4318` | Local HTTP receiver port |
+| `retainBelow` | `0.1` | Actionable-probability threshold, from 0 through 0.5; low value and low priority are also required to retain |
+| `timeoutMs` | `2000` | Per-record model timeout; failures remain eligible for analysis |
+| `maxInputChars` | `8000` | Maximum serialized model input; oversized input remains eligible for analysis |
+
+### Send logs from your application
+
+Use **OTLP HTTP/JSON**, not gRPC or binary protobuf. With the JavaScript JSON exporter:
+
+```sh
+npm install @opentelemetry/sdk-logs@0.222.0 @opentelemetry/exporter-logs-otlp-http@0.222.0
+```
+
+```ts
+import { LoggerProvider, BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
+import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
+
+const provider = new LoggerProvider({
+  processors: [new BatchLogRecordProcessor({
+    exporter: new OTLPLogExporter({
+      url: 'http://127.0.0.1:4318/v1/logs',
+    }),
+    maxExportBatchSize: 16,
+    exportTimeoutMillis: 15000,
+  })],
+});
+provider.getLogger('my-app').emit({
+  body: 'GET /health returned 200',
+  severityNumber: 9,
+});
+await provider.shutdown(); // Flush once when your application exits.
+```
+
+For SDKs that support HTTP/JSON configuration through environment variables:
+
+```dotenv
+OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:4318/v1/logs
+OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json
+```
+
+Environment variables configure an installed exporter; they do not instrument your application automatically. Check your language SDK supports this protocol. Keep batches at 16 records for the default timeouts. The receiver accepts uncompressed JSON only, up to 1 MiB and 100 records per request, with four evaluations in flight. Concurrent batches receive HTTP 503 with `Retry-After`; let a retry-capable exporter handle backpressure. It binds to loopback only. This preview is a local development receiver, not a remote hosted collector.
+
+### Embed the same receiver in an npm application
+
+```ts
+import { startJevLogsServer, loadJevConfig } from 'jevlogs/server';
+
+const server = await startJevLogsServer({
+  ...await loadJevConfig(),
+  async onLog({ resource, scope, logRecord, decision }) {
+    // Original OTLP fields are preserved. Connect your own durable sink here.
+    // decision.route tells you whether deeper LLM analysis is recommended.
+    console.log(JSON.stringify({ decision, traceId: logRecord.traceId }));
+  },
+});
+console.log(server.url);
+// During application shutdown: await server.close();
+```
+
+`onLog` is called for every record, including those marked `retain`. Redaction applies to model input; the callback receives the original record, so apply your own storage policy. HTTP success acknowledges callback completion, not durable storage. Callback failures return OTLP partial-success counts; compliant clients do not retry rejected records in a partial-success response. Persist within your callback if delivery matters. Retried requests are not deduplicated.
+
+Only the body and severity go into model input, after the SDK's redaction. Errors and `jev.protected=true` records bypass inference. Resource attributes, scope and trace IDs remain available to your callback. Default redaction is a starting point, not a complete sensitive-data policy.
+
+For a one-time model demonstration instead of starting the receiver, run `npx jevlogs --live --sample`. File and stdin modes still work as finite batches.
+
 ## What you can build today
 
 | Use case | How to use Jev Logs | What stays in your application |
@@ -80,7 +180,7 @@ Set `AI_GATEWAY_API_KEY` in your environment, then choose your input:
 
 ```sh
 # Evaluate the included sample logs with Jev
-npx jevlogs --live
+npx jevlogs --live --sample
 
 # Evaluate a local log file
 npx jevlogs --live --file ./app.log --limit 20
@@ -263,7 +363,7 @@ Keep Gateway credentials on the server. Mark audit, security, and compliance rec
 
 This release handles **Node.js log records**. It does not include a hosted dashboard, log storage, a Collector plugin, trace/metric sampling, automatic logger instrumentation, a durable queue, or a downstream reasoning-model client. It does not explain root causes or automatically remediate incidents.
 
-The CLI processes finite input after EOF; it is not a streaming `tail -f` agent. It reads at most 1 MiB, evaluates up to 100 selected records, and emits routing recommendations. Plain text and simple JSONL are supported; OTLP JSON and arbitrary numeric logger levels require normalization. For a continuous application pipeline, use the SDK with your own bounded queue.
+The file/stdin CLI modes process finite input after EOF, up to 1 MiB and 100 selected records. Plain text and simple JSONL are supported in those modes. `--live` alone runs the local OTLP HTTP/JSON receiver documented above. There is no `tail -f` integration or protobuf/gRPC receiver. Numeric logger levels in file inputs require normalization to OTel severity.
 
 The default redactor transforms the **model-bound copy**, not the original record sent to your exporter. Zero-data-retention is requested through Gateway, while your archive policies remain your responsibility. No cache, deduplication, or automatic model retries are implemented.
 
@@ -275,7 +375,7 @@ The default redactor transforms the **model-bound copy**, not the original recor
 
 | Component | Status |
 | :--- | :--- |
-| npm library and `npx jevlogs` CLI | Available in `jevlogs@0.1.1` |
+| npm library and `npx jevlogs` CLI | Available in `jevlogs@0.2.0` |
 | OpenTelemetry Logs integration | Annotation + optional analysis-branch routing |
 | Astro website and guide | [Deployed on Cloudflare](https://jevlogs.workspaceagent.workers.dev) |
 | Automated checks | [Live CI status](https://github.com/reachjalil/jevlogs/actions/workflows/ci.yml) |

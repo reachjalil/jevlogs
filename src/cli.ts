@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { loadJevConfig } from './config.js';
+import { startJevLogsServer } from './server.js';
 import { readFile, stat } from 'node:fs/promises';
 import { createJevLogs, redactCommonSecrets, type LogInput, type Evaluation } from './index.js';
 
@@ -6,10 +8,13 @@ const HELP = `
   jevlogs — keep your logs. spend on the signal.
 
   npx jevlogs                         Offline sample demo (no key, no network)
-  npx jevlogs --live                  Evaluate sample logs with real Jev
+  npx jevlogs --live                  Start local OTLP HTTP/JSON receiver
   npx jevlogs --live --file app.log    Evaluate a text or JSONL log file
   cat app.log | npx jevlogs --live --stdin --json
 
+  --config <path>    Config file (default ./jevlogs.config.json)
+  --sample           Evaluate built-in samples with --live and exit
+  --port <number>    Local receiver port (default 4318)
   --demo             Explicit offline sample demo (default)
   --live             Send redacted log bodies to Vercel AI Gateway / TypeSafe
   --file <path>      Read a local text or JSONL file (requires --live)
@@ -66,26 +71,42 @@ function display(body: unknown): string {
 }
 async function main() {
   const args = process.argv.slice(2);
+  let sample = false, port: number | undefined, configPath: string | undefined;
   let live = false, demo = false, json = false, stdin = false, file: string | undefined, limit = 20;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--help' || arg === '-h') { console.log(HELP); return; }
-    if (arg === '--version' || arg === '-v') { console.log('0.1.1'); return; }
+    if (arg === '--version' || arg === '-v') { console.log('0.2.0'); return; }
     if (arg === '--live') live = true;
+    else if (arg === '--sample') sample = true;
     else if (arg === '--demo') demo = true;
     else if (arg === '--json') json = true;
     else if (arg === '--stdin') stdin = true;
-    else if (arg === '--file' || arg === '--limit') {
+    else if (arg === '--file' || arg === '--limit' || arg === '--port' || arg === '--config') {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new Error(`${arg} requires a value.`);
-      if (arg === '--file') file = value;
+      if (arg === '--config') configPath = value;
+      else if (arg === '--file') file = value;
+      else if (arg === '--port') { port = Number(value); if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid port'); }
       else { limit = Number(value); if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('--limit must be an integer from 1 to 100.'); }
     } else throw new Error(`Unknown option: ${arg}. Run jevlogs --help.`);
   }
   if (live && demo) throw new Error('Choose --live or --demo, not both.');
   if (file && stdin) throw new Error('Choose --file or --stdin, not both.');
   if ((file || stdin) && !live) throw new Error('Custom logs require --live. The offline demo uses fixed samples only.');
+  const config = live ? await loadJevConfig(configPath) : {};
   if (live && !process.env.AI_GATEWAY_API_KEY?.trim()) throw new Error('Live mode requires AI_GATEWAY_API_KEY. Set it in your environment; do not pass keys on the command line.');
+  if (sample && (!live || file || stdin)) throw new Error('--sample requires --live without --file or --stdin');
+  if (live && !sample && !file && !stdin) {
+    const receiver = await startJevLogsServer({ ...config, port: port ?? config.port, onLog(event) {
+      // CLI emits decisions and correlation IDs only, never raw bodies or credentials.
+      console.log(JSON.stringify({ traceId: event.logRecord.traceId, spanId: event.logRecord.spanId, timeUnixNano: event.logRecord.timeUnixNano, ...event.decision }));
+    } });
+    console.error(`JEV LOGS · LIVE receiver: ${receiver.url}\nSend OTLP HTTP/JSON logs. Decisions go to stdout; original logs are not stored.\nRedacted bodies go to Vercel AI Gateway / TypeSafe. Provider charges apply. Ctrl+C to stop.`);
+    const stop = () => { void receiver.close().catch(() => { process.exitCode = 1; }); };
+    process.once('SIGINT', stop); process.once('SIGTERM', stop);
+    return;
+  }
   let records = samples;
   if (file || stdin) {
     if (file && (await stat(file)).size > MAX_BYTES) throw new Error('Input exceeds 1 MiB. Pass a smaller file.');
@@ -100,7 +121,7 @@ async function main() {
   let analyze = 0, unavailable = 0;
   for (let i = 0; i < records.length; i++) {
     const record = records[i]!;
-    const triage = createJevLogs(live ? {} : { evaluator: async () => sampleAnswers[i]! }).triage;
+    const triage = createJevLogs(live ? config : { evaluator: async () => sampleAnswers[i]! }).triage;
     const decision = await triage(record);
     if (decision.route === 'analyze') analyze++;
     if (decision.reason === 'unavailable') unavailable++;
