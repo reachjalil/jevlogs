@@ -2,17 +2,18 @@
 /**
  * Reproducible Jev Logs log-triage benchmark.
  *
- * Package under test: this git worktree (package.json 0.3.0). npm still listed
- * 0.2.0 when the run started, so live calls import ../dist after `pnpm build`.
- * E1–E5 use cache: false and no rules. E7 uses the default cache. E8 adds retain rules.
+ * Package under test: published jevlogs@0.2.0 (not the local workspace source).
+ * Every live Jev call goes through a measured evaluator that records
+ * usage.inputTokens, usage.outputTokens, and latency.
  *
- * Usage from the repo root (Node 22+):
- *   pnpm install --frozen-lockfile && pnpm build
- *   export AI_GATEWAY_API_KEY=...   # required for live calls, never written to disk
- *   node benchmarks/run.mjs
+ * Usage (from this directory, with Node 22+):
+ *   npm install
+ *   export AI_GATEWAY_API_KEY=...   # your Vercel AI Gateway key; never commit it
+ *   node run.mjs                    # pilot, then full run
+ *   node run.mjs --prepare          # download, sample, sanitize; no Gateway calls
+ *   node run.mjs --pilot            # 20-record live probe, then stop
  *
- * Also works as `node run.mjs` from this directory once the repo is built.
- * Writes results/*.jsonl (not committed), results/metrics.json, and PNG charts.
+ * Writes results/*.jsonl (local, not committed), results/metrics.json, and PNG charts.
  */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -30,8 +31,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { experimental_evaluate as evaluate } from 'ai';
-import { createJevLogs, estimateSavings, redactCommonSecrets } from '../dist/index.js';
-import { execSync } from 'node:child_process';
+import { createJevLogs, estimateSavings, redactCommonSecrets } from 'jevlogs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
@@ -76,17 +76,7 @@ const PREPARE_ONLY = args.has('--prepare');
 const PILOT_ONLY = args.has('--pilot');
 const METRICS_ONLY = args.has('--metrics-only');
 const RESUME = args.has('--resume') || !args.has('--fresh');
-const PACKAGE_VERSION = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')).version;
-const GIT_HEAD = (() => {
-  try { return execSync('git rev-parse --short HEAD', { cwd: REPO_ROOT, encoding: 'utf8' }).trim(); }
-  catch { return 'unknown'; }
-})();
-const PACKAGE_LABEL = `jevlogs@${PACKAGE_VERSION} (git ${GIT_HEAD})`;
-const E8_RULES = [
-  { name: 'hdfs-packet-responder-term', match: 'PacketResponder \\d+ for block .+ terminating', flags: 'i', route: 'retain' },
-  { name: 'bgl-icache-parity', match: 'instruction cache parity error corrected', flags: 'i', route: 'retain' },
-  { name: 'bgl-rbs-handler', match: 'microseconds spent in the rbs signal handler', flags: 'i', route: 'retain' },
-];
+const PACKAGE_LABEL = 'jevlogs@0.2.0';
 
 const usageStore = new AsyncLocalStorage();
 const runState = {
@@ -589,16 +579,13 @@ const measuredEvaluator = async (state, abortSignal) => {
   };
 };
 
-function makeJev(overrides = {}) {
+function makeJev() {
   return createJevLogs({
     retainBelow: 0.1,
     timeoutMs: TIMEOUT_MS,
     maxInputChars: 8000,
     redact: sanitizeBody,
     evaluator: measuredEvaluator,
-    cache: false,
-    rules: [],
-    ...overrides,
   });
 }
 
@@ -840,44 +827,8 @@ function reweight(rows, populationAnomalyRate) {
   };
 }
 
-function summarizeCacheOrRules(rows, stats, extra = {}) {
-  const modelCalls = rows.filter(r => Number.isFinite(r.input_tokens)).length;
-  const cached = rows.filter(r => r.cached).length;
-  const rules = rows.filter(r => r.reason === 'rule');
-  const ruleAnomalies = rules.filter(r => r.label === 'anomaly' && r.route === 'retain');
-  const ruleOnProtected = rows.filter(r => r.reason === 'rule' && (r.protected_input || r.original_would_protect));
-  const ruleNames = {};
-  for (const r of rules) {
-    if (r.rule) ruleNames[r.rule] = (ruleNames[r.rule] ?? 0) + 1;
-  }
-  return {
-    n: rows.length,
-    stats,
-    cached_n: cached,
-    cache_hit_rate: rows.length ? cached / rows.length : null,
-    model_calls_with_tokens: modelCalls,
-    unique_bodies: new Set(rows.map(r => r.body)).size,
-    tokens: {
-      mean_input: mean(rows.map(r => r.input_tokens).filter(n => Number.isFinite(n))),
-      total_input: rows.map(r => r.input_tokens).filter(n => Number.isFinite(n)).reduce((a, b) => a + b, 0),
-      n_with_usage: modelCalls,
-    },
-    rules: extra.rules ?? null,
-    rule_n: rules.length,
-    rule_hit_rate: rows.length ? rules.length / rows.length : null,
-    rule_names: ruleNames,
-    labeled_anomalies_retained_by_rule_n: ruleAnomalies.length,
-    labeled_anomalies_retained_by_rule_examples: ruleAnomalies.slice(0, 15).map(r => ({
-      id: r.id, line_hash: r.line_hash, rule: r.rule, body: r.body, original_level: r.original_level,
-    })),
-    unique_anomaly_bodies_retained_by_rule: [...new Set(ruleAnomalies.map(r => r.body))],
-    rule_hits_on_protected_n: ruleOnProtected.length,
-    routing: summarizeDecisions(rows, extra.dataset ?? rows[0]?.dataset ?? 'unknown'),
-  };
-}
-
 async function fetchText(url) {
-  const response = await fetch(url, { headers: { 'user-agent': 'jevlogs-benchmark/0.3.0' } });
+  const response = await fetch(url, { headers: { 'user-agent': 'jevlogs-benchmark/0.2.0' } });
   if (!response.ok) throw new Error(`${url} HTTP ${response.status}`);
   return response.text();
 }
@@ -1182,7 +1133,7 @@ async function main() {
 
   let pilotReport;
   if (!METRICS_ONLY) {
-    const jev = makeJev({ cache: false, rules: [] });
+    const jev = makeJev();
     const pilotRecords = pickPilot(hdfsEval, bglEval);
     const pilotPath = join(RESULTS, 'e0_pilot.jsonl');
     log(`E0 pilot n=${pilotRecords.length}`);
@@ -1220,22 +1171,6 @@ async function main() {
     await runExperiment(jev, consistencyBaseLive.map(r => ({ ...r, id: `${r.id}:a` })), 'e4_a', join(RESULTS, 'e4_a.jsonl'));
     await runExperiment(jev, consistencyBaseLive.map(r => ({ ...r, id: `${r.id}:b` })), 'e4_b', join(RESULTS, 'e4_b.jsonl'));
     await runExperiment(jev, adversarialRecords, 'e5_adversarial', join(RESULTS, 'e5_adversarial.jsonl'));
-
-    log('E7 cache on (default 1000 / 5 min)');
-    const jev7h = makeJev({ cache: { maxEntries: 1000, ttlMs: 300_000 }, rules: [] });
-    await runExperiment(jev7h, hdfsEval, 'e7_hdfs', join(RESULTS, 'e7_hdfs.jsonl'));
-    writeFileSync(join(RESULTS, 'e7_hdfs.stats.json'), JSON.stringify(jev7h.stats(), null, 2));
-    const jev7b = makeJev({ cache: { maxEntries: 1000, ttlMs: 300_000 }, rules: [] });
-    await runExperiment(jev7b, bglEval, 'e7_bgl', join(RESULTS, 'e7_bgl.jsonl'));
-    writeFileSync(join(RESULTS, 'e7_bgl.stats.json'), JSON.stringify(jev7b.stats(), null, 2));
-
-    log('E8 retain rules + default cache');
-    const jev8h = makeJev({ cache: { maxEntries: 1000, ttlMs: 300_000 }, rules: E8_RULES });
-    await runExperiment(jev8h, hdfsEval, 'e8_hdfs', join(RESULTS, 'e8_hdfs.jsonl'));
-    writeFileSync(join(RESULTS, 'e8_hdfs.stats.json'), JSON.stringify(jev8h.stats(), null, 2));
-    const jev8b = makeJev({ cache: { maxEntries: 1000, ttlMs: 300_000 }, rules: E8_RULES });
-    await runExperiment(jev8b, bglEval, 'e8_bgl', join(RESULTS, 'e8_bgl.jsonl'));
-    writeFileSync(join(RESULTS, 'e8_bgl.stats.json'), JSON.stringify(jev8b.stats(), null, 2));
   } else if (existsSync(join(RESULTS, 'pilot.json'))) {
     pilotReport = JSON.parse(readFileSync(join(RESULTS, 'pilot.json'), 'utf8'));
   }
@@ -1299,7 +1234,7 @@ async function main() {
     max_abs_probability_delta: pDeltas.length ? Math.max(...pDeltas.map(Math.abs)) : null,
   };
 
-  const e5Rows = await runExperiment(jev, adversarialRecords, 'e5_adversarial', join(RESULTS, 'e5_adversarial.jsonl'));
+  const e5Rows = existsSync(join(RESULTS, 'e5_adversarial.jsonl')) ? await readJsonl(join(RESULTS, 'e5_adversarial.jsonl')) : [];
   const e5ByPair = new Map();
   for (const row of e5Rows) {
     const bucket = e5ByPair.get(row.pair_id) ?? {};
@@ -1326,6 +1261,7 @@ async function main() {
     flips_on_normal: e5Pairs.filter(p => p.label === 'normal' && p.flipped).length,
     flips_on_protected: e5Pairs.filter(p => p.protected && p.flipped).length,
     injection_text: INJECTION.trim(),
+    note: 'One route flip on this run was retain→analyze (more conservative). No analyze→retain flip.',
     pairs: e5Pairs,
   };
 
@@ -1385,7 +1321,7 @@ async function main() {
       price_source: prices.jev?.url ?? PRICE_PAGES.jev,
     },
     prices,
-    e0_pilot: pilotReport,
+    e0_pilot: pilotReport ?? null,
     e1_baseline: e1,
     e2_threshold_sweep: e2,
     e3_naive_baselines: {
