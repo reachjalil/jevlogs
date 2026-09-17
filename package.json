@@ -54,7 +54,7 @@
     "url": "https://github.com/reachjalil/jevlogs/issues"
   },
   "bin": {
-    "jevlogs": "./dist/cli.js"
+    "jevlogs": "dist/cli.js"
   },
   "publishConfig": {
     "access": "public",
