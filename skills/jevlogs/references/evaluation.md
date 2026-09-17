@@ -65,3 +65,25 @@ Prices change. Link, do not paste:
 - Counting output tokens as zero for reasoning models. Their reasoning tokens are usually billed as output.
 - Measuring recall on the offline demo. It uses fixed answers and never calls Jev.
 - Comparing against a baseline that already had a keyword filter. Compare against what the user actually does today.
+
+## Measured example (Loghub samples, 2026-09-16)
+
+These figures are from published `jevlogs@0.2.0` on sanitized Loghub-derived HDFS_v1 and BGL samples (seed `20260916`, 2,500 lines each, ~30% labeled anomalous). They are **not** production logs. Full tables, charts, and decision JSONL: [reachjalil/jevlogs-log-triage-benchmark](https://huggingface.co/datasets/reachjalil/jevlogs-log-triage-benchmark). Runner: `benchmarks/run.mjs`.
+
+| Dataset | Anomaly recall | Routing rate (`retain`) | Precision of `retain` | Protected share of anomalies | Unavailable | Latency p50 / p95 | Mean Jev input tokens |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: |
+| HDFS_v1 sample | 0.9933 (745/750) | 0.0084 | 0.7619 | 0 | 0 | 968 / 1310 ms | 540 |
+| BGL sample | 1.0000 (750/750) | 0.0012 | 1.0000 | 1.0000 | 0 | 902 / 1232 ms | 532 |
+
+Spend for the whole run, from the token log: 4,476 Jev calls, 2,404,514 input tokens, estimated **$0.10099** at $0.042/M input fetched from the Gateway Jev page. Confirm on the dashboard.
+
+What that means in practice:
+
+- HDFS has no ERROR/FATAL lines. The five “missed” anomalies were `Verification succeeded for [BLOCK]` on blocks that Loghub labeled anomalous at **block** granularity. Jev treated successful verification as routine.
+- BGL alerts in this sample were all original FATAL (population: 99.982% of alerts). The local protection rule produced 100% recall without calling Jev. A WARN-or-above severity baseline matched that recall and retained 59% of lines; Jev retained 0.12%.
+- Default retain almost never fires because scores cluster at 25.25–25.75 (`value <= 25` is required). Raising `retainBelow` to 0.2 on saved HDFS probabilities increases retain to 10.56% and drops recall to 0.921.
+- 200 records scored twice: 0 route flips. An “ignore previous instructions” suffix flipped 1 of 40 pairs, a normal line from retain to analyze.
+- `estimateSavings()` with measured Jev tokens and the measured HDFS analyze rate (0.9916) is **negative** versus a GPT-4.1 baseline that already reads every line. Jev is cheap; it does not pay off when it barely filters.
+
+Reproduce: `cd benchmarks && npm install && export AI_GATEWAY_API_KEY=... && node run.mjs`.
+

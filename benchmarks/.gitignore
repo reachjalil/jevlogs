@@ -1,0 +1,9 @@
+node_modules/
+.cache/
+results/.work/
+results/*.jsonl
+results/usage.jsonl
+.publish/
+.venv/
+__pycache__/
+*.pyc

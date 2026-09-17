@@ -417,10 +417,14 @@ The default redactor transforms the **model-bound copy**, not the original recor
 | OpenTelemetry Logs integration | Annotation, analysis-branch routing, local OTLP receiver with forwarding |
 | Astro website and guide | [Deployed on Cloudflare](https://jevlogs.workspaceagent.workers.dev) |
 | Automated checks | [Live CI status](https://github.com/reachjalil/jevlogs/actions/workflows/ci.yml) |
-| Live Jev accuracy and production savings | Not yet independently validated for this project |
+| Live Jev accuracy and production savings | Loghub-derived sample published 2026-09-16; not production logs |
 | `jevlogs.com` | Domain connection pending |
 
 The AI SDK’s `experimental_evaluate` API is pinned and experimental. Jev is a hosted model; this repository makes the **integration SDK** open source. This is an independent project, not an official GitHub, TypeSafe, Vercel, or OpenTelemetry product.
+
+## Benchmark
+
+A reproducible run of published `jevlogs@0.2.0` on sanitized Loghub HDFS and BGL samples is on Hugging Face ([dataset](https://huggingface.co/datasets/reachjalil/jevlogs-log-triage-benchmark), [Space](https://huggingface.co/spaces/reachjalil/jevlogs-triage-explorer); write-up at [`docs/article/jevlogs-log-triage-findings.md`](docs/article/jevlogs-log-triage-findings.md)). On 2026-09-16, default routing retained 0.84% of a 30%-anomalous HDFS sample (5 of 750 block-labeled “anomalies,” all successful block verifications) and relied on the local FATAL rule for 100% of sampled BGL alerts.
 
 ## Launch artwork
 
