@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **OTLP HTTP protobuf.** `POST /v1/logs` accepts `application/x-protobuf` in addition to JSON, including gzip. Java, Go, Python, and Collector HTTP exporters work without switching to `http/json`. gRPC is rejected with HTTP 501. Forwarding remains OTLP HTTP/JSON.
+
 ## 0.3.0 — 2026-09-16
 
 The receiver becomes a usable pipeline stage instead of a printer.

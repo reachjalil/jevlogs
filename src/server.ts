@@ -1,6 +1,8 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { createRequire } from 'node:module';
+import { gunzipSync } from 'node:zlib';
 import { createJevLogs, decisionAttributes, type JevOptions, type Decision } from './index.js';
+import { decodeOtlpLogsRequest, encodeOtlpLogsResponse, encodeRpcStatus } from './otlp-proto.js';
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
 type ObjectValue = Record<string, unknown>;
@@ -113,7 +115,12 @@ class Semaphore {
     return () => { if (released) return; released = true; this.active--; this.waiting.shift()?.(); };
   }
 }
-/** Start a local OTLP/HTTP JSON receiver. Success acknowledges forwarding and callback completion, not durable storage. */
+const GRPC_MESSAGE = 'gRPC is not supported. POST OTLP HTTP to /v1/logs with Content-Type application/json or application/x-protobuf.';
+type Wire = 'json' | 'proto';
+function mediaType(header: string | undefined): string { return header?.split(';')[0]?.trim().toLowerCase() ?? ''; }
+function requestPath(url: string | undefined): string { return (url ?? '').split('?')[0] ?? ''; }
+function isGrpcPath(path: string): boolean { return /opentelemetry\.proto\.collector|LogsService\/Export/i.test(path); }
+/** Start a local OTLP/HTTP receiver (JSON and protobuf). Success acknowledges forwarding and callback completion, not durable storage. */
 export async function startJevLogsServer(options: JevServerOptions) {
   const port = options.port ?? 4318;
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid port');
@@ -138,26 +145,48 @@ export async function startJevLogsServer(options: JevServerOptions) {
   const started = Date.now();
   const counters = { requests: 0, records: 0, forwarded: 0, forwardFailures: 0, rejected: 0, busy: 0 };
   let inFlight = 0;
-  const reply = (res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) => { res.writeHead(status, { 'content-type': 'application/json', ...headers }); res.end(JSON.stringify(body)); };
+  const reply = (res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}, wire: Wire = 'json') => {
+    if (wire === 'proto') {
+      res.writeHead(status, { 'content-type': 'application/x-protobuf', ...headers });
+      res.end(status === 200 ? encodeOtlpLogsResponse(body) : encodeRpcStatus(body));
+      return;
+    }
+    res.writeHead(status, { 'content-type': 'application/json', ...headers });
+    res.end(JSON.stringify(body));
+  };
+  const rejectGrpc = (res: ServerResponse) => {
+    reply(res, 501, { code: 12, message: GRPC_MESSAGE }, { 'grpc-status': '12', 'grpc-message': encodeURIComponent(GRPC_MESSAGE) });
+  };
   const stats = (): JevServerStats => ({ version, uptimeMs: Date.now() - started, ...counters, triage: jev.stats() });
   const server = createServer(async (req, res) => {
     if (req.url === '/health' && req.method === 'GET') { reply(res, 200, { status: 'ok', version, forwarding: Boolean(forward) }); return; }
     if (req.url === '/stats' && req.method === 'GET') { reply(res, 200, stats()); return; }
-    if (req.url !== '/v1/logs' || req.method !== 'POST') { reply(res, 404, { code: 5, message: 'POST /v1/logs' }); return; }
-    if (req.headers['content-type']?.split(';')[0]?.trim() !== 'application/json' || (req.headers['content-encoding'] && req.headers['content-encoding'] !== 'identity')) { reply(res, 415, { code: 3, message: 'Use uncompressed OTLP HTTP/JSON' }); req.resume(); return; }
-    if (inFlight >= maxRequests) { counters.busy++; reply(res, 503, { code: 14, message: 'Receiver busy; retry' }, { 'retry-after': '1' }); req.resume(); return; }
+    const path = requestPath(req.url);
+    if (isGrpcPath(path) || mediaType(req.headers['content-type']).startsWith('application/grpc')) { rejectGrpc(res); req.resume(); return; }
+    if (path !== '/v1/logs' || req.method !== 'POST') { reply(res, 404, { code: 5, message: 'POST /v1/logs' }); return; }
+    const type = mediaType(req.headers['content-type']);
+    const wire: Wire | undefined = type === 'application/json' ? 'json' : type === 'application/x-protobuf' ? 'proto' : undefined;
+    if (!wire) { reply(res, 415, { code: 3, message: 'Use OTLP HTTP with Content-Type application/json or application/x-protobuf' }); req.resume(); return; }
+    const encoding = req.headers['content-encoding']?.split(',')[0]?.trim().toLowerCase();
+    if (encoding && encoding !== 'identity' && encoding !== 'gzip') { reply(res, 415, { code: 3, message: 'Use identity or gzip Content-Encoding' }, {}, wire); req.resume(); return; }
+    if (inFlight >= maxRequests) { counters.busy++; reply(res, 503, { code: 14, message: 'Receiver busy; retry' }, { 'retry-after': '1' }, wire); req.resume(); return; }
     inFlight++;
     counters.requests++;
     try {
       const chunks: Buffer[] = []; let bytes = 0;
       for await (const chunk of req) {
         bytes += chunk.length;
-        if (bytes > 1024 * 1024) { reply(res, 413, { code: 3, message: 'Maximum request size 1 MiB' }); req.resume(); return; }
+        if (bytes > 1024 * 1024) { reply(res, 413, { code: 3, message: 'Maximum request size 1 MiB' }, {}, wire); req.resume(); return; }
         chunks.push(Buffer.from(chunk));
       }
+      let raw: Buffer;
+      try { raw = encoding === 'gzip' ? gunzipSync(Buffer.concat(chunks), { maxOutputLength: 1024 * 1024 }) : Buffer.concat(chunks); }
+      catch { reply(res, 400, { code: 3, message: 'Invalid gzip payload' }, {}, wire); return; }
       let root: unknown; let records: Pending[];
-      try { root = JSON.parse(Buffer.concat(chunks).toString('utf8')); records = decode(root); }
-      catch { reply(res, 400, { code: 3, message: 'Invalid OTLP JSON; maximum 100 records' }); return; }
+      try {
+        root = wire === 'proto' ? decodeOtlpLogsRequest(raw) : JSON.parse(raw.toString('utf8'));
+        records = decode(root);
+      } catch { reply(res, 400, { code: 3, message: wire === 'proto' ? 'Invalid OTLP protobuf; maximum 100 records' : 'Invalid OTLP JSON; maximum 100 records' }, {}, wire); return; }
       counters.records += records.length;
       const decisions = new Map<ObjectValue, Decision>();
       await Promise.all(records.map(async event => {
@@ -180,7 +209,7 @@ export async function startJevLogsServer(options: JevServerOptions) {
           } catch {
             // Retryable: the client keeps the batch and onLog has not run, so nothing is double-delivered.
             counters.forwardFailures++;
-            reply(res, 503, { code: 14, message: 'Forwarding failed; retry' }, { 'retry-after': '1' });
+            reply(res, 503, { code: 14, message: 'Forwarding failed; retry' }, { 'retry-after': '1' }, wire);
             return;
           }
         }
@@ -192,8 +221,8 @@ export async function startJevLogsServer(options: JevServerOptions) {
         }
       }
       counters.rejected += rejected;
-      reply(res, 200, rejected ? { partialSuccess: { rejectedLogRecords: String(rejected), errorMessage: 'Sink rejected records; partial failures are not retried by OTLP clients' } } : upstream ? { partialSuccess: upstream } : {});
-    } catch { if (!res.headersSent) reply(res, 400, { code: 3, message: 'Request interrupted' }); }
+      reply(res, 200, rejected ? { partialSuccess: { rejectedLogRecords: String(rejected), errorMessage: 'Sink rejected records; partial failures are not retried by OTLP clients' } } : upstream ? { partialSuccess: upstream } : {}, {}, wire);
+    } catch { if (!res.headersSent) reply(res, 400, { code: 3, message: 'Request interrupted' }, {}, wire); }
     finally { inFlight--; }
   });
   server.requestTimeout = 30_000;

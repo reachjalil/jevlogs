@@ -11,7 +11,7 @@ const HELP = `
   jevlogs ${version} — keep your logs. spend on the signal.
 
   npx jevlogs                         Offline sample demo (no key, no network)
-  npx jevlogs --live                  Start local OTLP HTTP/JSON receiver
+  npx jevlogs --live                  Start local OTLP HTTP receiver (JSON or protobuf)
   npx jevlogs --live --file app.log    Evaluate a text or JSONL log file
   cat app.log | npx jevlogs --live --stdin --json
   tail -f app.log | npx jevlogs --live --stdin --follow --json
@@ -34,8 +34,8 @@ const HELP = `
   Input limit: 1 MiB total / 8,000 characters per record. No files are changed.
   JSONL accepts body or message, severityNumber, severityText or level,
   and protected: true. Errors and protected logs bypass the model.
-  Receiver: GET /health, GET /stats. Set forwardUrl in the config to send
-  annotated records on to your collector.
+  Receiver: GET /health, GET /stats. POST /v1/logs accepts JSON or protobuf; gRPC is not supported.
+  Set forwardUrl in the config to send annotated records on to your collector.
 `;
 const MAX_BYTES = 1024 * 1024;
 const samples: LogInput[] = [
@@ -127,7 +127,7 @@ async function main() {
       console.log(JSON.stringify({ traceId: event.logRecord.traceId, spanId: event.logRecord.spanId, timeUnixNano: event.logRecord.timeUnixNano, ...event.decision }));
     } });
     const forwardNote = receiver.forwardUrl ? `Annotated records are forwarded to ${receiver.forwardUrl} (${config.forwardMode ?? 'annotate'}).` : 'No forwardUrl configured: decisions go to stdout only.';
-    console.error(`JEV LOGS ${version} · LIVE receiver: ${receiver.url}\nSend OTLP HTTP/JSON logs. ${forwardNote}\nRedacted bodies go to Vercel AI Gateway / TypeSafe. Provider charges apply. GET /stats for counters. Ctrl+C to stop.`);
+    console.error(`JEV LOGS ${version} · LIVE receiver: ${receiver.url}\nSend OTLP HTTP logs (JSON or protobuf). gRPC is not supported. ${forwardNote}\nRedacted bodies go to Vercel AI Gateway / TypeSafe. Provider charges apply. GET /stats for counters. Ctrl+C to stop.`);
     const stop = () => {
       const s = receiver.stats();
       console.error(`\n${summary(s.triage, true)} ${s.forwarded ? `${s.forwarded} forwarded, ${s.forwardFailures} forward failures.` : ''}`.trimEnd());

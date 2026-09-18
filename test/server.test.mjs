@@ -19,7 +19,9 @@ test('receiver handles OTLP responses, validation and callback failures',async()
  try{
   let r=await post(payload);assert.equal(r.status,200);assert.deepEqual(await r.json(),{});assert.equal(events[0].logRecord.traceId,'a'.repeat(32));
   r=await post(payload);assert.equal((await r.json()).partialSuccess.rejectedLogRecords,'1');
-  assert.equal((await post('{')).status,400);assert.equal((await post(payload,'application/x-protobuf')).status,415);
+  assert.equal((await post('{')).status,400);assert.equal((await post(payload,'application/x-protobuf')).status,400);
+  r=await post(payload,'application/grpc');assert.equal(r.status,501);assert.match(await r.text(),/gRPC is not supported/);assert.equal(r.headers.get('grpc-status'),'12');
+  assert.equal((await post(payload,'text/plain')).status,415);
   assert.equal((await post({resourceLogs:'bad'})).status,400);
   assert.equal((await post({...payload,resourceLogs:[{scopeLogs:[{logRecords:Array(101).fill({})}]}]})).status,400);
  }finally{await receiver.close();}
@@ -92,4 +94,61 @@ test('OTLP header syntax parsing',async()=>{
  const {parseOtlpHeaders}=await import('../dist/server.js');
  assert.deepEqual(parseOtlpHeaders('authorization=Bearer%20abc, x-team=logs'),{authorization:'Bearer abc','x-team':'logs'});
  assert.deepEqual(parseOtlpHeaders(undefined),{});assert.throws(()=>parseOtlpHeaders('novalue'));assert.throws(()=>parseOtlpHeaders('bad key=1'));
+});
+import { gzipSync } from 'node:zlib';
+import { decodeOtlpLogsRequest, decodeOtlpLogsResponse } from '../dist/otlp-proto.js';
+const varint=n=>{const o=[];n=Number(n);while(n>0x7f){o.push((n&0x7f)|0x80);n>>>=7;}o.push(n);return Buffer.from(o);};
+const tag=(f,w)=>varint((f<<3)|w);
+const str=(f,s)=>{const b=Buffer.from(s);return Buffer.concat([tag(f,2),varint(b.length),b]);};
+const msg=(f,b)=>Buffer.concat([tag(f,2),varint(b.length),b]);
+const protoLog=({body,severityNumber=9,traceId,spanId,intValue,attributes=[]})=>{
+ const rec=[tag(2,0),varint(severityNumber)];
+ if(body!==undefined) rec.push(msg(5,str(1,body)));
+ if(intValue!==undefined){let n=BigInt(intValue);if(n<0n)n+=0x10000000000000000n;const v=[];while(n>0x7fn){v.push(Number(n&0x7fn)|0x80);n>>=7n;}v.push(Number(n));rec.push(msg(5,Buffer.concat([tag(3,0),Buffer.from(v)])));}
+ for(const [k,v] of attributes) rec.push(msg(6,Buffer.concat([str(1,k),msg(2,str(1,v))])));
+ if(traceId) rec.push(tag(9,2),varint(16),Buffer.from(traceId,'hex'));
+ if(spanId) rec.push(tag(10,2),varint(8),Buffer.from(spanId,'hex'));
+ return msg(1,msg(2,msg(2,Buffer.concat(rec))));
+};
+test('protobuf HTTP logs decode to the JSON mapping and gzip is accepted',async()=>{
+ const events=[];const receiver=await startJevLogsServer({port:0,evaluator,onLog:e=>{events.push(e);if(events.length>3)throw Error('sink');}});
+ const post=(body,headers)=>fetch(receiver.url,{method:'POST',headers,body});
+ try{
+  const traceId='ab'.repeat(16);const spanId='cd'.repeat(8);
+  const bin=protoLog({body:'health',severityNumber:9,traceId,spanId,attributes:[['service.ok','yes']]});
+  let r=await post(bin,{'content-type':'application/x-protobuf'});
+  assert.equal(r.status,200);assert.equal(r.headers.get('content-type'),'application/x-protobuf');
+  assert.equal(Buffer.byteLength(await r.arrayBuffer()),0);
+  assert.equal(events[0].logRecord.body.stringValue,'health');
+  assert.equal(events[0].logRecord.traceId,traceId);assert.equal(events[0].logRecord.spanId,spanId);
+  assert.equal(events[0].decision.route,'retain');
+  r=await post(gzipSync(bin),{'content-type':'application/x-protobuf','content-encoding':'gzip'});
+  assert.equal(r.status,200);assert.equal(events.length,2);
+  r=await post(gzipSync(Buffer.from(JSON.stringify(payload))),{'content-type':'application/json','content-encoding':'gzip'});
+  assert.equal(r.status,200);assert.equal(events[2].logRecord.traceId,'a'.repeat(32));
+  r=await post(bin,{'content-type':'application/x-protobuf'});
+  assert.equal(r.status,200);assert.equal(r.headers.get('content-type'),'application/x-protobuf');
+  assert.deepEqual(decodeOtlpLogsResponse(Buffer.from(await r.arrayBuffer())),{partialSuccess:{rejectedLogRecords:'1',errorMessage:'Sink rejected records; partial failures are not retried by OTLP clients'}});
+  r=await post(bin,{'content-type':'application/x-protobuf','content-encoding':'br'});assert.equal(r.status,415);
+  const grpc=await fetch(receiver.url.replace('/v1/logs','/opentelemetry.proto.collector.logs.v1.LogsService/Export'),{method:'POST',headers:{'content-type':'application/grpc'},body:bin});
+  assert.equal(grpc.status,501);assert.match(await grpc.text(),/gRPC is not supported/);
+ }finally{await receiver.close();}
+});
+test('protobuf inbound still forwards annotated JSON upstream',async()=>{
+ const collector=await upstream();
+ const receiver=await startJevLogsServer({port:0,evaluator,forwardUrl:collector.url,forwardHeaders:{}});
+ try{
+  const r=await fetch(receiver.url,{method:'POST',headers:{'content-type':'application/x-protobuf'},body:protoLog({body:'health',severityNumber:9})});
+  assert.equal(r.status,200);assert.equal(r.headers.get('content-type'),'application/x-protobuf');
+  assert.equal(collector.received[0].body.resourceLogs[0].scopeLogs[0].logRecords[0].body.stringValue,'health');
+  assert.equal(collector.received[0].headers['content-type'],'application/json');
+ }finally{await receiver.close();await collector.close();}
+});
+test('protobuf AnyValue mapping covers int, nested, and unknown fields',async()=>{
+ const decoded=decodeOtlpLogsRequest(protoLog({intValue:-2n}));
+ assert.equal(decoded.resourceLogs[0].scopeLogs[0].logRecords[0].body.intValue,'-2');
+ const inner=msg(5,msg(5,msg(1,str(1,'x'))));
+ const unknown=Buffer.concat([tag(99,0),varint(7),msg(1,msg(2,msg(2,inner)))]);
+ const nested=decodeOtlpLogsRequest(unknown);
+ assert.equal(nested.resourceLogs[0].scopeLogs[0].logRecords[0].body.arrayValue.values[0].stringValue,'x');
 });

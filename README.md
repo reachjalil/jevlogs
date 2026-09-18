@@ -88,7 +88,9 @@ The default config is read from your current working directory. Use `--config ./
 
 ### Send logs from your application
 
-Use **OTLP HTTP/JSON**, not gRPC or binary protobuf. With the JavaScript JSON exporter:
+POST OTLP HTTP to `/v1/logs` as JSON (`application/json`) or protobuf (`application/x-protobuf`). gzip is accepted. gRPC is not supported and returns HTTP 501. Java, Go, Python, and Collector HTTP exporters already default to protobuf, so they do not need `OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json`.
+
+With the JavaScript JSON exporter:
 
 ```sh
 npm install @opentelemetry/sdk-logs@0.222.0 @opentelemetry/exporter-logs-otlp-http@0.222.0
@@ -114,14 +116,13 @@ provider.getLogger('my-app').emit({
 await provider.shutdown(); // Flush once when your application exits.
 ```
 
-For SDKs that support HTTP/JSON configuration through environment variables:
+For other language SDKs, point the logs endpoint at the receiver. Protobuf is the default:
 
 ```dotenv
 OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:4318/v1/logs
-OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json
 ```
 
-Environment variables configure an installed exporter; they do not instrument your application automatically. Check your language SDK supports this protocol. Keep batches at 16 records for the default timeouts. The receiver accepts uncompressed JSON only, up to 1 MiB and 100 records per request, with four evaluations in flight. Concurrent batches receive HTTP 503 with `Retry-After`; let a retry-capable exporter handle backpressure. It binds to loopback only. This preview is a local development receiver, not a remote hosted collector.
+JSON still works if you set `OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json`. Environment variables configure an installed exporter; they do not instrument your application automatically. Keep batches at 16 records for the default timeouts. The receiver accepts uncompressed or gzip JSON and protobuf, up to 1 MiB and 100 records per request, with four evaluations in flight. Concurrent batches receive HTTP 503 with `Retry-After`; let a retry-capable exporter handle backpressure. It binds to loopback only. This preview is a local development receiver, not a remote hosted collector.
 
 ### Embed the same receiver in an npm application
 
@@ -161,7 +162,7 @@ Point your application at Jev Logs and Jev Logs at the collector you already run
 ```
 
 ```text
-your app ──OTLP JSON──▶ jevlogs :4318 ──annotated OTLP JSON──▶ collector :4320
+your app ──OTLP HTTP (JSON or protobuf)──▶ jevlogs :4318 ──annotated OTLP JSON──▶ collector :4320
 ```
 
 Forwarding happens before the local decision output, so an upstream failure returns HTTP 503 with `Retry-After` and your exporter resends the batch. Authentication headers for the upstream come from `OTEL_EXPORTER_OTLP_LOGS_HEADERS` or `OTEL_EXPORTER_OTLP_HEADERS` in the receiver's environment, using the standard `key=value,key=value` syntax. `analysis-only` mode forwards just the records routed to analysis, which is how you feed a separate LLM-analysis pipeline without touching your archive.
@@ -399,9 +400,9 @@ Keep Gateway credentials on the server. Mark audit, security, and compliance rec
 
 ## Current scope and limits
 
-This release handles **Node.js log records** and OTLP HTTP/JSON from any language through the local receiver. It does not include a hosted dashboard, log storage, a Collector plugin, trace/metric sampling, automatic logger instrumentation, a durable queue, or a downstream reasoning-model client. It does not explain root causes or automatically remediate incidents.
+This release handles **Node.js log records** and OTLP HTTP JSON or protobuf from any language through the local receiver. It does not include a hosted dashboard, log storage, a Collector plugin, trace/metric sampling, automatic logger instrumentation, a durable queue, or a downstream reasoning-model client. It does not explain root causes or automatically remediate incidents.
 
-The file/stdin CLI modes process finite input after EOF, up to 1 MiB and 100 selected records. Plain text and simple JSONL are supported in those modes. `--live` alone runs the local OTLP HTTP/JSON receiver documented above. `--stdin --follow` evaluates a live stream line by line. There is no protobuf/gRPC receiver. Numeric logger levels in file inputs require normalization to OTel severity.
+The file/stdin CLI modes process finite input after EOF, up to 1 MiB and 100 selected records. Plain text and simple JSONL are supported in those modes. `--live` alone runs the local OTLP HTTP receiver documented above. `--stdin --follow` evaluates a live stream line by line. There is no gRPC receiver. Numeric logger levels in file inputs require normalization to OTel severity.
 
 The default redactor transforms the **model-bound copy**, not the original record sent to your exporter. Zero-data-retention is requested through Gateway, while your archive policies remain your responsibility. Identical redacted inputs share one model call and are cached in memory for five minutes by default; there are no automatic model retries.
 
