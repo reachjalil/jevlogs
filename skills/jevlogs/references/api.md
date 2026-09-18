@@ -7,13 +7,13 @@ https://github.com/reachjalil/jevlogs. If this file and the code disagree, the c
 
 | Import | Exports |
 | --- | --- |
-| `jevlogs` | `createJevLogs`, `JevLogExporter`, `estimateSavings`, `redactCommonSecrets`, types `LogInput`, `Decision`, `Evaluation`, `Evaluator`, `JevOptions`, `ExporterOptions`, `CostInputs` |
+| `jevlogs` | `createJevLogs`, `JevLogExporter`, `estimateSavings`, `redactCommonSecrets`, `fingerprintLog`, `compileRules`, `decisionAttributes`, types `LogInput`, `Decision`, `Evaluation`, `Evaluator`, `JevOptions`, `ExporterOptions`, `CostInputs`, `Rule`, `CacheOptions` |
 | `jevlogs/server` | `startJevLogsServer`, `loadJevConfig`, types `JevServerOptions`, `JevLogEvent`, `JevConfig` |
 | `npx jevlogs` | CLI (`dist/cli.js`) |
 
 Runtime: Node.js 22 or newer, ESM. Dependency: `ai@7.0.105` (Vercel AI SDK). Optional peer: `@opentelemetry/sdk-logs@0.222.0`, needed at runtime only for `JevLogExporter`, but TypeScript consumers may need it installed for the exported declarations to resolve.
 
-Nothing else is exported. There is no `analyze()`, no `explain()`, no cache, no retry helper, no downstream LLM client, no Collector plugin, no gRPC or protobuf receiver.
+Nothing else is exported. There is no `analyze()`, no `explain()`, no retry helper, no downstream LLM client, no Collector plugin, no gRPC or protobuf receiver.
 
 ## `createJevLogs(options?)`
 
@@ -24,6 +24,9 @@ interface JevOptions {
   maxInputChars?: number;  // default 8000; integer >= 1
   redact?: (text: string) => string;   // default redactCommonSecrets
   evaluator?: Evaluator;   // default: Jev via AI Gateway
+  rules?: Rule[];          // after protection, before cache/model
+  cache?: CacheOptions | false; // default 1000 entries, 5 minutes
+  fingerprint?: boolean;   // default true; false keys the cache on exact redacted input
 }
 type Evaluator = (state: string, signal: AbortSignal) => Promise<Evaluation>;
 interface Evaluation { value: number; priority: 'critical'|'high'|'normal'|'low'; actionableProbability: number }
@@ -41,6 +44,8 @@ interface Decision {
   reason: 'model'|'protected'|'uncertain'|'unavailable'|'rule';
   cached: boolean;   // served from the in-memory decision cache or a shared in-flight evaluation
   rule?: string;     // matching rule name when reason === 'rule'
+  fingerprint?: string;      // redacted body with identifiers as <*>
+  fingerprintHits?: number;  // process-local reuse count including this record
 }
 ```
 
@@ -48,7 +53,7 @@ interface Decision {
 
 1. If `protected === true`, or `severityNumber >= 17`, or `severityText` matches `ERROR|FATAL|CRITICAL` (case-insensitive): return `{ value: 100, priority: 'critical', route: 'analyze', actionableProbability: null, reason: 'protected', cached: false }`. No network call.
 2. Serialize `{ body, severityText, severityNumber }` with `JSON.stringify`. If longer than `maxInputChars`: `reason: 'unavailable'` fallback.
-2a. (0.3.0) `rules` are tested against the redacted body text; first match returns `reason: 'rule'` (`retain` gives value 0 / low, `analyze` gives the fallback). Then the cache is checked by SHA-256 of the redacted state; hits return `cached: true`. Identical in-flight inputs share one model call.
+2a. (0.3.0) `rules` are tested against the redacted body text; first match returns `reason: 'rule'` (`retain` gives value 0 / low, `analyze` gives the fallback). Then the cache is checked; hits return `cached: true`. Identical in-flight inputs share one model call. With `fingerprint` (default true), the cache key is the identifier template plus severity when the template still has enough literal text; otherwise it is the SHA-256 of the redacted state. HTTP status codes, percentages, and other small numbers stay literal.
 3. Run `redact` on that string. If it throws, returns a non-string, or the result exceeds `maxInputChars`: `unavailable` fallback.
 4. Call the evaluator with the redacted string, racing against `timeoutMs`. On timeout the abort signal fires.
 5. Validate the answer: probability in [0,1], value finite in [0,100], priority in the four allowed strings. Anything else: `unavailable` fallback.
@@ -58,6 +63,8 @@ interface Decision {
 The `unavailable` fallback is `{ value: 100, priority: 'high', route: 'analyze', actionableProbability: null, reason: 'unavailable' }`. Provider error details are not exposed. There are no automatic retries (`maxRetries: 0` is passed to the AI SDK). Failures are never cached.
 
 0.3.0 additions: `createJevLogs({ rules, cache })`, `jev.stats()`, `JevLogExporter#stats()`, `startJevLogsServer({ forwardUrl, forwardMode, forwardHeaders, forwardTimeoutMs, concurrency, maxRequests })` with `onLog` optional when forwarding, `GET /stats`, `parseOtlpHeaders()`, `compileRules()`, `decisionAttributes()`, and the CLI flag `--follow` for streaming stdin. Config keys `forwardUrl`, `forwardMode`, `rules`, `cacheSize`, `cacheTtlMs`.
+
+Unreleased: `fingerprint` (default true) and exported `fingerprintLog()`. Decisions may include `fingerprint` and `fingerprintHits`. Config key `fingerprint`.
 
 ### What the default evaluator sends
 
@@ -76,6 +83,10 @@ Each question's instructions tell Jev to treat the log as untrusted data and ign
 ## `redactCommonSecrets(text)`
 
 Replaces `Bearer <token>`, the value after `password|api_key|api-key|apikey|token|secret` followed by `:` or `=`, and email addresses. Synchronous, regex-based, not a PII detector. Compose it: `redact: t => redactCommonSecrets(t).replace(/customer_\w+/g, '[CUSTOMER]')`.
+
+## `fingerprintLog(text)`
+
+Pure function. Replaces UUIDs, ISO and syslog timestamps, IPv4/IPv6, mixed hex IDs of 8+ characters, durations, and integers of 6+ digits with `<*>`. Does not replace HTTP status codes, percentages, or other small numbers. Consecutive placeholders collapse. The result is capped at 512 characters. Used as the cache key only when the template still contains at least 12 non-placeholder characters.
 
 ## `JevLogExporter`
 
@@ -97,6 +108,8 @@ Implements `LogRecordExporter` (`export`, `forceFlush`, `shutdown`). Put it insi
 | `jev.reason` | string |
 | `jev.cached` | boolean, present only when true |
 | `jev.rule` | string, present only when a rule decided |
+| `jev.fingerprint` | string template, present when fingerprinting is enabled |
+| `jev.fingerprint_hits` | number, present when this decision used the cache path with a fingerprint |
 | `jev.actionable_probability` | number; omitted when the decision has `null` |
 
 In `analysis-only` mode, `retain` records are not forwarded. If every record in a batch is retained, the callback succeeds with an empty forward.
@@ -150,6 +163,12 @@ Reads JSON only (never executes code). Default path `./jevlogs.config.json`; a m
 | `retainBelow` | number | |
 | `timeoutMs` | number | |
 | `maxInputChars` | number | |
+| `forwardUrl` | string | absolute http(s) OTLP logs URL |
+| `forwardMode` | string | `annotate` or `analysis-only`; requires `forwardUrl` |
+| `rules` | array | `{ match, route, name?, flags? }` |
+| `cacheSize` | number | `0` disables the cache |
+| `cacheTtlMs` | number | |
+| `fingerprint` | boolean | default true when omitted |
 
 Unknown keys throw. There is no key for the API key; it must come from the environment or `envFile`.
 

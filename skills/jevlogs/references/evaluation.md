@@ -29,7 +29,7 @@ Join `decisions.jsonl` back to the sample by `line` (one-based index over non-bl
 | Jev tokens | `usage` from a measured evaluator (`../examples/measured-evaluator.ts`) | replaces the 400-token assumption |
 | Downstream tokens | the user's reasoning model usage per analyzed record, input and output, including reasoning tokens if billed | feeds `tokensPerLog` and `outputTokensPerLog` |
 
-Recall on a labeled sample is a floor, not a guarantee. Re-sample bypassed records from the archive after rollout.
+Recall on a labeled sample is a floor, not a guarantee. Re-sample bypassed records from the archive after rollout. If fingerprinting is on, group those samples by `jev.fingerprint` so a retained template is reviewed as a family, not as one line.
 
 ## Step 4: estimate, then compare with bills
 

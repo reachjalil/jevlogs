@@ -107,4 +107,4 @@ const server = await startJevLogsServer({
 
 ## What is not included
 
-No Collector processor, no trace or metric sampling, no automatic instrumentation of `console.log` or existing loggers, no durable queue, no dedup, no `tail -f`, no hosted service. If the user needs one of these, say so and build it in their stack; do not imply jevlogs provides it.
+No Collector processor, no trace or metric sampling, no automatic instrumentation of `console.log` or existing loggers, no durable queue, no persistent cache, no hosted service. In-memory fingerprinting and exact-input caching are included. If the user needs the rest, say so and build it in their stack; do not imply jevlogs provides it.

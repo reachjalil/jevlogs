@@ -15,6 +15,10 @@ export interface Decision {
   cached: boolean;
   /** Name of the matching rule when reason is 'rule'. */
   rule?: string;
+  /** Redacted body with identifiers replaced by `<*>`. Present when fingerprinting is enabled. */
+  fingerprint?: string;
+  /** How many times this process has reused the fingerprint's cached decision, including this one. */
+  fingerprintHits?: number;
 }
 export interface Evaluation { value: number; priority: Decision['priority']; actionableProbability: number; inputTokens?: number }
 export type Evaluator = (state: string, signal: AbortSignal) => Promise<Evaluation>;
@@ -31,8 +35,10 @@ export interface JevOptions {
   evaluator?: Evaluator;
   /** Rules run after protection and redaction, before the cache and the model. First match wins. */
   rules?: Rule[];
-  /** In-memory decision cache keyed by a hash of the redacted model input. Default 1,000 entries for 5 minutes. false disables it. */
+  /** In-memory decision cache. Default 1,000 entries for 5 minutes. false disables it. */
   cache?: CacheOptions | false;
+  /** Share cached decisions across logs that differ only by identifiers. Default true. */
+  fingerprint?: boolean;
 }
 export interface JevStats {
   decisions: number; model: number; cached: number; protected: number; rules: number; unavailable: number;
@@ -46,6 +52,31 @@ export const redactCommonSecrets = (text: string): string => text
   .replace(/Bearer\s+[^\s"']+/gi, 'Bearer [REDACTED]')
   .replace(/((?:password|api[_-]?key|token|secret)["']?\s*[:=]\s*["']?)[^\s,"'}]+/gi, '$1[REDACTED]')
   .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[EMAIL]');
+
+const PLACEHOLDER = '<*>';
+const FINGERPRINT_MAX = 512;
+const FINGERPRINT_MIN_LITERAL = 12;
+/** Replace high-entropy identifiers with `<*>`. Status codes, percentages, and other small numbers stay literal. */
+export function fingerprintLog(text: string): string {
+  const template = text
+    .replace(/\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g, PLACEHOLDER)
+    .replace(/\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b/g, PLACEHOLDER)
+    .replace(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\b/g, PLACEHOLDER)
+    .replace(/\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{0,4}\b/g, PLACEHOLDER)
+    .replace(/\b::1\b/g, PLACEHOLDER)
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, PLACEHOLDER)
+    .replace(/\b(?=[0-9a-fA-F]*\d)(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{8,}\b/g, PLACEHOLDER)
+    .replace(/\b\d+(?:\.\d+)?\s*(?:ns|us|µs|μs|ms|s|m|h|min|sec|secs|seconds?|minutes?|hours?)\b/gi, PLACEHOLDER)
+    .replace(/\b\d{6,}\b/g, PLACEHOLDER)
+    .replace(/(?:<\*>\s*)+/g, `${PLACEHOLDER} `)
+    .replace(/\s+/g, ' ')
+    .trim();
+  return template.length > FINGERPRINT_MAX ? `${template.slice(0, FINGERPRINT_MAX - 3)}...` : template;
+}
+/** True when the template still has enough literal text to share a decision safely. */
+function fingerprintCacheable(template: string): boolean {
+  return template.includes(PLACEHOLDER) && template.replace(/<\*>/g, '').replace(/\s+/g, '').length >= FINGERPRINT_MIN_LITERAL;
+}
 
 const jevEvaluator: Evaluator = async (state, abortSignal) => {
   const result = await evaluate({
@@ -82,19 +113,20 @@ export function compileRules(rules: Rule[] | undefined): CompiledRule[] {
 }
 
 class DecisionCache {
-  private readonly entries = new Map<string, { decision: Decision; expires: number }>();
+  private readonly entries = new Map<string, { decision: Decision; expires: number; hits: number }>();
   constructor(private readonly maxEntries: number, private readonly ttlMs: number) {}
-  get(key: string): Decision | undefined {
+  get(key: string): { decision: Decision; hits: number } | undefined {
     const entry = this.entries.get(key);
     if (!entry) return undefined;
     if (entry.expires <= Date.now()) { this.entries.delete(key); return undefined; }
+    entry.hits++;
     this.entries.delete(key); this.entries.set(key, entry); // refresh recency
-    return entry.decision;
+    return { decision: entry.decision, hits: entry.hits };
   }
   set(key: string, decision: Decision): void {
     if (this.entries.has(key)) this.entries.delete(key);
     else if (this.entries.size >= this.maxEntries) { const oldest = this.entries.keys().next().value; if (oldest !== undefined) this.entries.delete(oldest); }
-    this.entries.set(key, { decision, expires: Date.now() + this.ttlMs });
+    this.entries.set(key, { decision, expires: Date.now() + this.ttlMs, hits: 1 });
   }
   get size(): number { return this.entries.size; }
 }
@@ -124,6 +156,8 @@ export function createJevLogs(options: JevOptions = {}) {
     else stats.model++;
     return decision;
   };
+  if (options.fingerprint !== undefined && typeof options.fingerprint !== 'boolean') throw new RangeError('fingerprint must be a boolean');
+  const fingerprintEnabled = options.fingerprint !== false;
   const redact = options.redact ?? redactCommonSecrets;
   const inFlight = new Map<string, Promise<Decision>>();
   return {
@@ -136,20 +170,30 @@ export function createJevLogs(options: JevOptions = {}) {
         if (raw.length > maxInput) return record(fallback('unavailable'));
         const state = redact(raw);
         if (typeof state !== 'string' || state.length > maxInput) return record(fallback('unavailable'));
+        const bodyText = redact(typeof log.body === 'string' ? log.body : JSON.stringify(log.body) ?? '');
+        const template = fingerprintEnabled ? fingerprintLog(bodyText) : undefined;
+        const decorate = (decision: Decision, hits?: number): Decision => {
+          if (template === undefined) return decision;
+          return hits === undefined ? { ...decision, fingerprint: template } : { ...decision, fingerprint: template, fingerprintHits: hits };
+        };
         if (rules.length) {
-          const bodyText = redact(typeof log.body === 'string' ? log.body : JSON.stringify(log.body) ?? '');
           const hit = rules.find(rule => rule.regex.test(bodyText));
-          if (hit) return record(hit.route === 'retain'
+          if (hit) return record(decorate(hit.route === 'retain'
             ? { value: 0, priority: 'low', route: 'retain', actionableProbability: null, reason: 'rule', rule: hit.name, cached: false }
-            : { ...fallback('rule'), rule: hit.name });
+            : { ...fallback('rule'), rule: hit.name }));
         }
-        const key = cache ? createHash('sha256').update(state).digest('base64') : undefined;
+        const useFingerprintKey = Boolean(template && fingerprintCacheable(template));
+        const key = cache ? createHash('sha256').update(useFingerprintKey ? `fp\0${template}\0${log.severityText ?? ''}\0${log.severityNumber ?? ''}` : state).digest('base64') : undefined;
         if (cache && key) {
           const hit = cache.get(key);
-          if (hit) return record({ ...hit, cached: true });
-          // Identical records evaluated concurrently (a batch of health checks) share one model call.
+          if (hit) return record(decorate({ ...hit.decision, cached: true }, hit.hits));
+          // Matching fingerprints (or identical redacted inputs) share one in-flight model call.
           const pending = inFlight.get(key);
-          if (pending) return record({ ...await pending, cached: true });
+          if (pending) {
+            const decision = await pending;
+            const stored = cache.get(key);
+            return record(decorate({ ...decision, cached: true }, stored?.hits));
+          }
         }
         const evaluation = (async (): Promise<Decision> => {
           const started = performance.now();
@@ -165,7 +209,7 @@ export function createJevLogs(options: JevOptions = {}) {
           const retain = result.actionableProbability < threshold && result.value <= 25 && result.priority === 'low';
           const decision: Decision = { value: result.value, priority: result.priority, actionableProbability: result.actionableProbability, route: retain ? 'retain' : 'analyze', reason: retain || result.actionableProbability >= 1 - threshold ? 'model' : 'uncertain', cached: false };
           if (cache && key) cache.set(key, decision);
-          return decision;
+          return decorate(decision, cache && key ? 1 : undefined);
         })();
         if (cache && key) {
           // Followers only reuse successful answers; a failure lets them fall back independently.
@@ -195,6 +239,8 @@ export function decisionAttributes(decision: Decision): Record<string, string | 
     ...(decision.actionableProbability === null ? {} : { 'jev.actionable_probability': decision.actionableProbability }),
     ...(decision.cached ? { 'jev.cached': true } : {}),
     ...(decision.rule === undefined ? {} : { 'jev.rule': decision.rule }),
+    ...(decision.fingerprint === undefined ? {} : { 'jev.fingerprint': decision.fingerprint }),
+    ...(decision.fingerprintHits === undefined ? {} : { 'jev.fingerprint_hits': decision.fingerprintHits }),
   };
 }
 /** Wrap an existing exporter in BatchLogRecordProcessor. Originals are never mutated. */

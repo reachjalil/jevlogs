@@ -77,7 +77,7 @@ const decision = await jev.triage({
 
 OpenTelemetry: wrap your existing `LogRecordExporter` with `JevLogExporter`. Default `annotate` mode exports every record with `jev.*` attributes. Use a separate processor with `mode: 'analysis-only'` if you want confidently low-value records to skip the LLM branch. Annotation alone does not reduce analysis spend.
 
-Local receiver: add `jevlogs.config.json` at the project root and run `npx jevlogs@latest --live`. Applications send **OTLP HTTP/JSON** to `http://127.0.0.1:4318/v1/logs`, not gRPC or protobuf. Set `forwardUrl` to pass annotated records on to your collector, `rules` to retain known noise without a model call, and read `GET /stats` for counters. Identical redacted inputs are cached in memory. Loopback only; this is a development receiver, not a hosted collector.
+Local receiver: add `jevlogs.config.json` at the project root and run `npx jevlogs@latest --live`. Applications send **OTLP HTTP/JSON** to `http://127.0.0.1:4318/v1/logs`, not gRPC or protobuf. Set `forwardUrl` to pass annotated records on to your collector, `rules` to retain known noise without a model call, and read `GET /stats` for counters. Identical redacted inputs and identifier-only variants are cached in memory. Loopback only; this is a development receiver, not a hosted collector.
 
 ## Limits (preview)
 
@@ -137,8 +137,9 @@ The default config is read from your current working directory. Use `--config ./
 | `forwardUrl` | None | OTLP HTTP/JSON logs endpoint that receives the annotated batch, for example your Collector at `http://127.0.0.1:4320/v1/logs` |
 | `forwardMode` | `annotate` | `annotate` forwards every record with `jev.*` attributes; `analysis-only` forwards only records routed to analysis |
 | `rules` | `[]` | Regular expressions tested against the redacted body before any model call; first match wins |
-| `cacheSize` | `1000` | Decisions kept in memory, keyed by a hash of the redacted model input; `0` disables the cache |
+| `cacheSize` | `1000` | Decisions kept in memory; `0` disables the cache |
 | `cacheTtlMs` | `300000` | How long a cached decision stays valid |
+| `fingerprint` | `true` | Share the cache across logs that differ only by identifiers (`<*>` templates). `false` keys the cache on the exact redacted input |
 
 ### Send logs from your application
 
@@ -220,9 +221,9 @@ your app ──OTLP JSON──▶ jevlogs :4318 ──annotated OTLP JSON──�
 
 Forwarding happens before the local decision output, so an upstream failure returns HTTP 503 with `Retry-After` and your exporter resends the batch. Authentication headers for the upstream come from `OTEL_EXPORTER_OTLP_LOGS_HEADERS` or `OTEL_EXPORTER_OTLP_HEADERS` in the receiver's environment, using the standard `key=value,key=value` syntax. `analysis-only` mode forwards just the records routed to analysis, which is how you feed a separate LLM-analysis pipeline without touching your archive.
 
-Rules run after protection and redaction and before the cache or the model, so known noise costs nothing. A `retain` rule produces `value: 0`, `priority: low`; an `analyze` rule produces the conservative fallback. ERROR/FATAL and `jev.protected` records are never affected by rules. Identical redacted inputs share one model call and are then served from an in-memory cache, marked `cached: true`. `GET /stats` reports requests, records, forwarded batches, cache hits, rule hits, model latency and reported input tokens.
+Rules run after protection and redaction and before the cache or the model, so known noise costs nothing. A `retain` rule produces `value: 0`, `priority: low`; an `analyze` rule produces the conservative fallback. ERROR/FATAL and `jev.protected` records are never affected by rules. Identical redacted inputs share one model call and are then served from an in-memory cache, marked `cached: true`. Logs that differ only by identifiers (request IDs, IPs, timestamps, durations, long numbers) share that cache through a `<*>` fingerprint; HTTP status codes and small numbers stay literal. `GET /stats` reports requests, records, forwarded batches, cache hits, rule hits, model latency and reported input tokens.
 
-The embedded server accepts the same options: `forwardUrl`, `forwardMode`, `forwardHeaders`, `forwardTimeoutMs`, `rules`, `cache`, `concurrency` (model evaluations in flight, default 4) and `maxRequests` (requests accepted at once, default 8). `onLog` is optional when `forwardUrl` is set. `startJevLogsServer()` returns `stats()` alongside `url` and `close()`.
+The embedded server accepts the same options: `forwardUrl`, `forwardMode`, `forwardHeaders`, `forwardTimeoutMs`, `rules`, `cache`, `fingerprint`, `concurrency` (model evaluations in flight, default 4) and `maxRequests` (requests accepted at once, default 8). `onLog` is optional when `forwardUrl` is set. `startJevLogsServer()` returns `stats()` alongside `url` and `close()`.
 
 
 ## Choose your starting point
@@ -303,7 +304,7 @@ Total input is limited to 1 MiB. Each selected input line is limited to 8,000 ch
 `--json` omits raw bodies. Example from the **offline demo**:
 
 ```json
-{"line":1,"mode":"demo","value":0,"priority":"low","actionableProbability":0.01,"route":"retain","reason":"model","cached":false}
+{"line":1,"mode":"demo","value":0,"priority":"low","actionableProbability":0.01,"route":"retain","reason":"model","cached":false,"fingerprint":"GET /health returned 200 in <*>"}
 ```
 
 `line` is the one-based processed record index after blank lines are removed, not necessarily the physical file line number. `mode` distinguishes sample answers from live mode. In live mode, `reason: "protected"` means the local protection rule ran without calling the model.
@@ -354,7 +355,9 @@ The standalone API has no OpenTelemetry runtime dependency. The package's export
 | `actionableProbability` | Boolean probability that deeper investigation would be useful; `null` when there is no model answer |
 | `reason` | `model`, `protected`, `uncertain`, `unavailable`, or `rule` |
 | `cached` | `true` when served from the local decision cache or shared with an identical in-flight evaluation |
-| `rule` | Name of the matching configured rule when `reason` is `rule` |
+| `rule` | Name of the matching rule when `reason` is `rule` |
+| `fingerprint` | Redacted body with identifiers replaced by `<*>`, when fingerprinting is enabled |
+| `fingerprintHits` | How many times this process has reused that fingerprint, including this record |
 
 The rubric describes no useful signal, low diagnostic detail, moderate context, actionable failure evidence, and incident-defining evidence. Jev's score is mapped by multiplying it by 25. A fallback value of 100 is a conservative policy value, not an inferred judgment or certainty.
 
@@ -376,7 +379,8 @@ All other records receive `analyze`. A record recommended for analysis can still
 | `redact` | `redactCommonSecrets` | Synchronous text transform before model transmission |
 | `evaluator` | Jev through AI Gateway | Injectable evaluator for tests or custom integrations |
 | `rules` | `[]` | `{ name?, match, flags?, route }` tested against the redacted body after protection, before cache and model; first match wins |
-| `cache` | 1,000 entries, 5 minutes | `{ maxEntries, ttlMs }` or `false`; keyed by a SHA-256 of the redacted model input; failures are never cached |
+| `cache` | 1,000 entries, 5 minutes | `{ maxEntries, ttlMs }` or `false`; keyed by fingerprint when identifiers were masked, otherwise by the redacted model input; failures are never cached |
+| `fingerprint` | `true` | Replace identifiers with `<*>` and share cached decisions across matching templates. `false` uses exact redacted input only |
 
 Timeouts, malformed answers, serialization errors, oversized state, redactor failures, and provider failures produce `reason: "unavailable"` with `route: "analyze"`. `stats()` returns counters for decisions, model calls, cache hits, rule hits, protected and unavailable records, routes, model latency, and provider-reported input tokens. The SDK does not expose provider error details in the returned decision and performs no automatic retries. Changing the evaluator replaces the model integration; it does not change the conservative routing rules.
 
@@ -426,6 +430,8 @@ The wrapper exports a new record preserving the original body, timestamps, sever
 | `jev.actionable_probability` | Probability when a model answer exists; otherwise omitted on ordinary input |
 | `jev.cached` | `true` only when the decision came from the cache or a shared in-flight evaluation |
 | `jev.rule` | Matching rule name, only when a rule decided |
+| `jev.fingerprint` | Identifier template, when fingerprinting is enabled |
+| `jev.fingerprint_hits` | Process-local reuse count for that fingerprint, including this record |
 
 Reserve `jev.*` for this integration. Default mode is `annotate`: every record is exported, so annotation alone does not reduce downstream model calls or storage charges.
 
@@ -533,6 +539,7 @@ Pricing references, checked September 16, 2026: [TypeSafe's launch announcement]
 | `tail -f` never returns results | Without `--follow` the CLI waits for EOF. Add `--follow` to evaluate lines as they arrive. |
 | Receiver answers 503 | Forwarding to `forwardUrl` failed, or more than `maxRequests` batches were in flight. Retry-capable exporters resend the batch. Check `GET /stats`. |
 | A noisy line still reaches the model | Rules match the redacted body text, not the whole JSON record; check the pattern and remember protected records bypass rules. |
+| Two similar logs both called Jev | Fingerprints mask identifiers, not status codes or small numbers. `fingerprint: false` forces exact-input caching. A template with too little remaining text is not shared. |
 | Numeric logger levels do not protect errors | Normalize to OTel `severityNumber` or a string `severityText`; arbitrary logger numbering is not translated. |
 | A TypeScript declaration cannot resolve OTel | Install `@opentelemetry/sdk-logs@0.222.0`, which provides the exporter's referenced types. |
 

@@ -11,7 +11,7 @@ const HELP = `
   jevlogs ${version} — keep your logs. spend on the signal.
 
   npx jevlogs                         Offline sample demo (no key, no network)
-  npx jevlogs --live                  Start local OTLP HTTP/JSON receiver
+  npx jevlogs --live                  Start local OTLP HTTP receiver (JSON or protobuf)
   npx jevlogs --live --file app.log    Evaluate a text or JSONL log file
   cat app.log | npx jevlogs --live --stdin --json
   tail -f app.log | npx jevlogs --live --stdin --follow --json
@@ -78,7 +78,7 @@ function display(body: unknown): string {
 }
 function printDecision(index: number, mode: 'live' | 'demo', record: LogInput, decision: Decision, json: boolean) {
   if (json) { console.log(JSON.stringify({ line: index + 1, mode, ...decision })); return; }
-  const tags = [decision.reason + (decision.rule ? ` ${decision.rule}` : ''), decision.cached ? 'cached' : '', decision.actionableProbability === null ? '' : `actionable ${(decision.actionableProbability * 100).toFixed(0)}%`].filter(Boolean).join(' · ');
+  const tags = [decision.reason + (decision.rule ? ` ${decision.rule}` : ''), decision.cached ? 'cached' : '', decision.fingerprint && decision.fingerprint.includes('<*>') ? decision.fingerprint.slice(0, 80) : '', decision.actionableProbability === null ? '' : `actionable ${(decision.actionableProbability * 100).toFixed(0)}%`].filter(Boolean).join(' · ');
   console.log(`  ${String(decision.value).padStart(3)} / 100  ${decision.priority.padEnd(8)} ${decision.route === 'analyze' ? 'ANALYZE' : 'RETAIN '}  ${display(record.body)}\n             ${tags}\n`);
 }
 function summary(stats: JevStats, live: boolean): string {
@@ -127,7 +127,7 @@ async function main() {
       console.log(JSON.stringify({ traceId: event.logRecord.traceId, spanId: event.logRecord.spanId, timeUnixNano: event.logRecord.timeUnixNano, ...event.decision }));
     } });
     const forwardNote = receiver.forwardUrl ? `Annotated records are forwarded to ${receiver.forwardUrl} (${config.forwardMode ?? 'annotate'}).` : 'No forwardUrl configured: decisions go to stdout only.';
-    console.error(`JEV LOGS ${version} · LIVE receiver: ${receiver.url}\nSend OTLP HTTP/JSON logs. ${forwardNote}\nRedacted bodies go to Vercel AI Gateway / TypeSafe. Provider charges apply. GET /stats for counters. Ctrl+C to stop.`);
+    console.error(`JEV LOGS ${version} · LIVE receiver: ${receiver.url}\nSend OTLP HTTP logs (JSON or protobuf). gRPC is not supported. ${forwardNote}\nRedacted bodies go to Vercel AI Gateway / TypeSafe. Provider charges apply. GET /stats for counters. Ctrl+C to stop.`);
     const stop = () => {
       const s = receiver.stats();
       console.error(`\n${summary(s.triage, true)} ${s.forwarded ? `${s.forwarded} forwarded, ${s.forwardFailures} forward failures.` : ''}`.trimEnd());

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createJevLogs, JevLogExporter, estimateSavings, redactCommonSecrets } from '../dist/index.js';
+import { createJevLogs, JevLogExporter, estimateSavings, redactCommonSecrets, fingerprintLog } from '../dist/index.js';
 import { LoggerProvider, BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 const low = async () => ({ value: 0, priority: 'low', actionableProbability: 0.02 });
 const makeRecord = (body = 'health ok', attributes = {}) => ({body, attributes, severityNumber: 9, hrTime:[1,0], hrTimeObserved:[1,0], resource:{attributes:{}}, instrumentationScope:{name:'test'}, droppedAttributesCount:0, spanContext:{traceId:'a'.repeat(32),spanId:'b'.repeat(16),traceFlags:1}});
@@ -92,7 +92,7 @@ test('failures are never cached; protected records skip the cache',async()=>{
 test('rules decide before the model, never override protection, and are validated',async()=>{
  let calls=0;const evaluator=async()=>{calls++;return {value:100,priority:'critical',actionableProbability:0.99};};
  const jev=createJevLogs({evaluator,rules:[{name:'health',match:'^GET /health',route:'retain'},{match:'audit',flags:'i',route:'analyze'}]});
- const noise=await jev.triage({body:'GET /health 200'});assert.deepEqual(noise,{value:0,priority:'low',route:'retain',actionableProbability:null,reason:'rule',rule:'health',cached:false});
+ const noise=await jev.triage({body:'GET /health 200'});assert.deepEqual(noise,{value:0,priority:'low',route:'retain',actionableProbability:null,reason:'rule',rule:'health',cached:false,fingerprint:'GET /health 200'});
  const audit=await jev.triage({body:'AUDIT role changed'});assert.equal(audit.route,'analyze');assert.equal(audit.reason,'rule');assert.equal(audit.rule,'rule-2');
  assert.equal(calls,0);
  assert.equal((await jev.triage({body:'GET /health 500',severityText:'ERROR'})).reason,'protected');
@@ -108,7 +108,43 @@ test('exporter coalesces identical in-flight records and annotates cache and rul
  await send(exporter,[makeRecord('health ok'),makeRecord('health ok'),makeRecord('ping')]);
  const [a,b,c]=downstream.batches[0];
  assert.equal('jev.cached' in a.attributes,false);assert.equal(b.attributes['jev.cached'],true);assert.equal(c.attributes['jev.rule'],'noise');assert.equal(c.attributes['jev.reason'],'rule');
+ assert.equal(a.attributes['jev.fingerprint'],'health ok');assert.equal(b.attributes['jev.fingerprint_hits'],2);
  assert.equal(exporter.stats().cached,1);assert.equal(calls,1);
  const failing=createJevLogs({evaluator:async()=>{await new Promise(r=>setTimeout(r,3));throw Error('down');}});
  const [x,y]=await Promise.all([failing.triage({body:'same'}),failing.triage({body:'same'})]);assert.equal(x.reason,'unavailable');assert.equal(y.reason,'unavailable');
+});
+test('fingerprintLog masks identifiers and keeps status codes and percentages',()=>{
+ assert.equal(fingerprintLog('GET /health from 10.0.1.4 returned 200 in 2ms id=550e8400-e29b-41d4-a716-446655440000'),'GET /health from <*> returned 200 in <*> id=<*>');
+ assert.equal(fingerprintLog('pool at 94% after 2026-09-18T10:20:01.000Z'),'pool at 94% after <*>');
+ assert.equal(fingerprintLog('trace a1b2c3d4e5f60718 accessed cache'),'trace <*> accessed cache');
+ assert.equal(fingerprintLog('GET /health 200'),'GET /health 200');
+ assert.notEqual(fingerprintLog('returned 200'),fingerprintLog('returned 500'));
+});
+test('matching fingerprints share a cached decision; status codes and tiny templates do not',async()=>{
+ let calls=0;const evaluator=async()=>{calls++;return low();};
+ const jev=createJevLogs({evaluator});
+ const a=await jev.triage({body:'GET /health from 10.0.1.4 returned 200 in 2ms id=550e8400-e29b-41d4-a716-446655440000'});
+ const b=await jev.triage({body:'GET /health from 10.8.0.12 returned 200 in 14ms id=11111111-2222-4333-8444-555555555555'});
+ assert.equal(calls,1);assert.equal(a.cached,false);assert.equal(b.cached,true);assert.equal(b.fingerprintHits,2);
+ assert.equal(a.fingerprint,'GET /health from <*> returned 200 in <*> id=<*>');assert.equal(a.fingerprint,b.fingerprint);
+ await jev.triage({body:'GET /health from 10.0.1.4 returned 500 in 2ms id=550e8400-e29b-41d4-a716-446655440000'});
+ assert.equal(calls,2);
+ const exact=createJevLogs({evaluator,fingerprint:false});
+ await exact.triage({body:'GET /health from 10.0.1.4 returned 200 in 2ms id=aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'});
+ await exact.triage({body:'GET /health from 10.8.0.12 returned 200 in 14ms id=11111111-2222-4333-8444-555555555555'});
+ assert.equal(calls,4);
+ const tiny=createJevLogs({evaluator});
+ await tiny.triage({body:'550e8400-e29b-41d4-a716-446655440000'});
+ await tiny.triage({body:'11111111-2222-4333-8444-555555555555'});
+ assert.equal(calls,6);
+ assert.throws(()=>createJevLogs({fingerprint:'yes'}));
+});
+test('fingerprint variants share one in-flight model call',async()=>{
+ let calls=0;const evaluator=async()=>{calls++;await new Promise(r=>setTimeout(r,5));return low();};
+ const jev=createJevLogs({evaluator});
+ const [a,b]=await Promise.all([
+  jev.triage({body:'cache hit product=100001 request=550e8400-e29b-41d4-a716-446655440000'}),
+  jev.triage({body:'cache hit product=200002 request=11111111-2222-4333-8444-555555555555'}),
+ ]);
+ assert.equal(calls,1);assert.equal(a.cached+b.cached,1);assert.ok(a.fingerprint.includes('<*>'));
 });
