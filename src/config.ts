@@ -12,8 +12,10 @@ export interface JevConfig {
   rules?: Rule[];
   /** Derived from cacheSize and cacheTtlMs in the JSON file. */
   cache?: CacheOptions | false;
+  /** Share cached decisions across identifier-only variants. Default true. */
+  fingerprint?: boolean;
 }
-const KEYS = ['port', 'envFile', 'retainBelow', 'timeoutMs', 'maxInputChars', 'forwardUrl', 'forwardMode', 'rules', 'cacheSize', 'cacheTtlMs'];
+const KEYS = ['port', 'envFile', 'retainBelow', 'timeoutMs', 'maxInputChars', 'forwardUrl', 'forwardMode', 'rules', 'cacheSize', 'cacheTtlMs', 'fingerprint'];
 /** JSON only: configuration never executes application code. Existing environment variables win. */
 export async function loadJevConfig(path?: string): Promise<JevConfig> {
   const filename = resolve(path ?? 'jevlogs.config.json');
@@ -37,6 +39,7 @@ export async function loadJevConfig(path?: string): Promise<JevConfig> {
   }
   if (config.forwardMode !== undefined && config.forwardMode !== 'annotate' && config.forwardMode !== 'analysis-only') throw new Error('Config forwardMode must be "annotate" or "analysis-only"');
   if (config.forwardMode !== undefined && config.forwardUrl === undefined) throw new Error('Config forwardMode requires forwardUrl');
+  if (config.fingerprint !== undefined && typeof config.fingerprint !== 'boolean') throw new Error('Config fingerprint must be a boolean');
   if (config.rules !== undefined) {
     try { compileRules(config.rules as Rule[]); } catch (error) { throw new Error(`Config ${error instanceof Error ? error.message : 'rules are invalid'}`); }
   }

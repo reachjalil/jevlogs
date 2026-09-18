@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Template fingerprints.** After redaction, identifiers (UUIDs, IPs, timestamps, mixed hex IDs, durations, 6+ digit numbers) become `<*>`. Matching templates share one cached Jev decision and one in-flight model call. HTTP status codes, percentages, and other small numbers stay literal, so `200` and `500` do not collapse. Decisions carry `fingerprint` and `fingerprintHits`; OpenTelemetry gets `jev.fingerprint` and `jev.fingerprint_hits`. Disable with `fingerprint: false`. Failures are still never cached. `fingerprintLog()` is exported for inspection.
+
 ## 0.3.0 — 2026-09-16
 
 The receiver becomes a usable pipeline stage instead of a printer.

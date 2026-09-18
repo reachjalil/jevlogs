@@ -83,8 +83,9 @@ The default config is read from your current working directory. Use `--config ./
 | `forwardUrl` | None | OTLP HTTP/JSON logs endpoint that receives the annotated batch, for example your Collector at `http://127.0.0.1:4320/v1/logs` |
 | `forwardMode` | `annotate` | `annotate` forwards every record with `jev.*` attributes; `analysis-only` forwards only records routed to analysis |
 | `rules` | `[]` | Regular expressions tested against the redacted body before any model call; first match wins |
-| `cacheSize` | `1000` | Decisions kept in memory, keyed by a hash of the redacted model input; `0` disables the cache |
+| `cacheSize` | `1000` | Decisions kept in memory; `0` disables the cache |
 | `cacheTtlMs` | `300000` | How long a cached decision stays valid |
+| `fingerprint` | `true` | Share the cache across logs that differ only by identifiers (`<*>` templates). `false` keys the cache on the exact redacted input |
 
 ### Send logs from your application
 
@@ -166,7 +167,7 @@ your app ──OTLP JSON──▶ jevlogs :4318 ──annotated OTLP JSON──�
 
 Forwarding happens before the local decision output, so an upstream failure returns HTTP 503 with `Retry-After` and your exporter resends the batch. Authentication headers for the upstream come from `OTEL_EXPORTER_OTLP_LOGS_HEADERS` or `OTEL_EXPORTER_OTLP_HEADERS` in the receiver's environment, using the standard `key=value,key=value` syntax. `analysis-only` mode forwards just the records routed to analysis, which is how you feed a separate LLM-analysis pipeline without touching your archive.
 
-Rules run after protection and redaction and before the cache or the model, so known noise costs nothing. A `retain` rule produces `value: 0`, `priority: low`; an `analyze` rule produces the conservative fallback. ERROR/FATAL and `jev.protected` records are never affected by rules. Identical redacted inputs share one model call and are then served from an in-memory cache, marked `cached: true`. `GET /stats` reports requests, records, forwarded batches, cache hits, rule hits, model latency and reported input tokens.
+Rules run after protection and redaction and before the cache or the model, so known noise costs nothing. A `retain` rule produces `value: 0`, `priority: low`; an `analyze` rule produces the conservative fallback. ERROR/FATAL and `jev.protected` records are never affected by rules. Identical redacted inputs share one model call and are then served from an in-memory cache, marked `cached: true`. Logs that differ only by identifiers (request IDs, IPs, timestamps, durations, long numbers) share that cache through a `<*>` fingerprint; HTTP status codes and small numbers stay literal. `GET /stats` reports requests, records, forwarded batches, cache hits, rule hits, model latency and reported input tokens.
 
 
 ## What you can build today
@@ -332,6 +333,8 @@ ERROR/FATAL records and records marked `jev.protected: true` always remain eligi
 | `reason` | `model`, `protected`, `uncertain`, `unavailable`, or `rule`. |
 | `cached` | `true` when served from the local decision cache instead of a new model call. |
 | `rule` | Name of the matching configured rule when `reason` is `rule`. |
+| `fingerprint` | Redacted body with identifiers replaced by `<*>`, when fingerprinting is enabled. |
+| `fingerprintHits` | How many times this process has reused that fingerprint, including this record. |
 
 ```ts
 const jev = createJevLogs({
@@ -340,6 +343,7 @@ const jev = createJevLogs({
   maxInputChars: 8000,
   rules: [{ name: 'health', match: '^GET /health', route: 'retain' }],
   cache: { maxEntries: 1000, ttlMs: 300_000 }, // or false
+  fingerprint: true, // false keys the cache on the exact redacted input
 });
 jev.stats(); // decisions, model calls, cache hits, rule hits, latency, input tokens
 ```
@@ -403,7 +407,7 @@ This release handles **Node.js log records** and OTLP HTTP/JSON from any languag
 
 The file/stdin CLI modes process finite input after EOF, up to 1 MiB and 100 selected records. Plain text and simple JSONL are supported in those modes. `--live` alone runs the local OTLP HTTP/JSON receiver documented above. `--stdin --follow` evaluates a live stream line by line. There is no protobuf/gRPC receiver. Numeric logger levels in file inputs require normalization to OTel severity.
 
-The default redactor transforms the **model-bound copy**, not the original record sent to your exporter. Zero-data-retention is requested through Gateway, while your archive policies remain your responsibility. Identical redacted inputs share one model call and are cached in memory for five minutes by default; there are no automatic model retries.
+The default redactor transforms the **model-bound copy**, not the original record sent to your exporter. Zero-data-retention is requested through Gateway, while your archive policies remain your responsibility. Identical redacted inputs, and logs that differ only by identifiers, share one model call and are cached in memory for five minutes by default; there are no automatic model retries.
 
 `estimateSavings().retainedFraction` is the fraction **still sent to the downstream LLM**, including protected and uncertain records; it is not your archive retention rate. Start with annotation, measure incident recall and costs, then choose whether to enable filtering.
 
