@@ -13,7 +13,7 @@ https://github.com/reachjalil/jevlogs. If this file and the code disagree, the c
 
 Runtime: Node.js 22 or newer, ESM. Dependency: `ai@7.0.105` (Vercel AI SDK). Optional peer: `@opentelemetry/sdk-logs@0.222.0`, needed at runtime only for `JevLogExporter`, but TypeScript consumers may need it installed for the exported declarations to resolve.
 
-Nothing else is exported. There is no `analyze()`, no `explain()`, no cache, no retry helper, no downstream LLM client, no Collector plugin, no gRPC or protobuf receiver.
+Nothing else is exported. There is no `analyze()`, no `explain()`, no cache, no retry helper, no downstream LLM client, no Collector plugin, no gRPC receiver.
 
 ## `createJevLogs(options?)`
 
@@ -157,7 +157,7 @@ Unknown keys throw. There is no key for the API key; it must come from the envir
 
 ```text
 npx jevlogs                         offline demo, fixed answers, no network, no key
-npx jevlogs --live                  local OTLP HTTP/JSON receiver on 127.0.0.1:4318, runs until Ctrl+C
+npx jevlogs --live                  local OTLP HTTP receiver (JSON or protobuf) on 127.0.0.1:4318, runs until Ctrl+C
 npx jevlogs --live --sample         4 built-in samples through real Jev, then exit
 npx jevlogs --live --file <path>    text or JSONL file, finite batch
 cat x | npx jevlogs --live --stdin  read to EOF, then evaluate

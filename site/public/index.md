@@ -24,7 +24,7 @@ ERROR/FATAL/CRITICAL records and `jev.protected` records always stay eligible fo
 
 ```sh
 npx jevlogs                 # offline demo, no API key
-npx jevlogs --live          # local OTLP HTTP/JSON receiver on 127.0.0.1:4318
+npx jevlogs --live          # local OTLP HTTP receiver (JSON or protobuf) on 127.0.0.1:4318
 npx jevlogs --live --sample # live Jev on bundled sample logs
 npm install jevlogs
 ```
@@ -46,7 +46,7 @@ const decision = await jev.triage({
 
 OpenTelemetry: wrap your existing `LogRecordExporter` with `JevLogExporter`. Default `annotate` mode exports every record with `jev.*` attributes. Use a separate processor with `mode: 'analysis-only'` if you want confidently low-value records to skip the LLM branch. Annotation alone does not reduce analysis spend.
 
-Local receiver: add `jevlogs.config.json` at the project root and run `npx jevlogs@latest --live`. Applications send **OTLP HTTP/JSON** to `http://127.0.0.1:4318/v1/logs`, not gRPC or protobuf. Set `forwardUrl` to pass annotated records on to your collector, `rules` to retain known noise without a model call, and read `GET /stats` for counters. Identical redacted inputs are cached in memory. Loopback only; this is a development receiver, not a hosted collector.
+Local receiver: add `jevlogs.config.json` at the project root and run `npx jevlogs@latest --live`. Applications send **OTLP HTTP** JSON or protobuf to `http://127.0.0.1:4318/v1/logs`. gRPC is not supported. Set `forwardUrl` to pass annotated JSON records on to your collector, `rules` to retain known noise without a model call, and read `GET /stats` for counters. Identical redacted inputs are cached in memory. Loopback only; this is a development receiver, not a hosted collector.
 
 ## Limits (preview)
 

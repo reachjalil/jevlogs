@@ -76,21 +76,20 @@ Protocol, from `src/server.ts`:
 | Aspect | Value |
 | --- | --- |
 | Endpoint | `POST http://127.0.0.1:4318/v1/logs`, plus `GET /health` (checks the process, not model access) |
-| Encoding | `Content-Type: application/json`, uncompressed OTLP/JSON only. gRPC and protobuf get 415 |
+| Encoding | `Content-Type: application/json` or `application/x-protobuf`. gzip optional. gRPC (`application/grpc` or the collector LogsService path) returns 501 |
 | Limits | 1 MiB body (413), 100 log records per request (400), one request at a time (503 + `Retry-After: 1`) |
 | Timeouts | request 15 s, headers 10 s |
 | Concurrency | 4 evaluations in flight |
 | Bind | loopback only; put an authenticated collector in front for remote traffic |
 | Response | `{}` on success; `{ partialSuccess: { rejectedLogRecords, errorMessage } }` when `onLog` threw |
 
-Client side, any OTel SDK that supports `http/json`:
+Client side, any OTel SDK that can POST OTLP HTTP:
 
 ```dotenv
 OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:4318/v1/logs
-OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json
 ```
 
-In JavaScript that is `@opentelemetry/exporter-logs-otlp-http` (`OTLPLogExporter`) with `maxExportBatchSize: 16`. The sending application does not need the Gateway key; only the receiver process does.
+Java, Go, Python, and Collector HTTP exporters default to protobuf on that path. JSON still works with `OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json`. In JavaScript that is `@opentelemetry/exporter-logs-otlp-http` (`OTLPLogExporter`) with `maxExportBatchSize: 16`. The sending application does not need the Gateway key; only the receiver process does.
 
 Embedded in Node.js:
 

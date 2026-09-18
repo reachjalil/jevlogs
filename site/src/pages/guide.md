@@ -49,7 +49,9 @@ The default config is read from your current working directory. Use `--config ./
 
 ### Send logs from your application
 
-Use **OTLP HTTP/JSON**, not gRPC or binary protobuf. With the JavaScript JSON exporter:
+POST OTLP HTTP to `/v1/logs` as JSON (`application/json`) or protobuf (`application/x-protobuf`). gzip is accepted. gRPC is not supported and returns HTTP 501. Java, Go, Python, and Collector HTTP exporters already default to protobuf, so they do not need `OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json`.
+
+With the JavaScript JSON exporter:
 
 ```sh
 npm install @opentelemetry/sdk-logs@0.222.0 @opentelemetry/exporter-logs-otlp-http@0.222.0
@@ -75,14 +77,13 @@ provider.getLogger('my-app').emit({
 await provider.shutdown(); // Flush once when your application exits.
 ```
 
-For SDKs that support HTTP/JSON configuration through environment variables:
+For other language SDKs, point the logs endpoint at the receiver. Protobuf is the default:
 
 ```dotenv
 OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://127.0.0.1:4318/v1/logs
-OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json
 ```
 
-Environment variables configure an installed exporter; they do not instrument your application automatically. Check your language SDK supports this protocol. Keep batches at 16 records for the default timeouts. The receiver accepts uncompressed JSON only, up to 1 MiB and 100 records per request, with four evaluations in flight. Concurrent batches receive HTTP 503 with `Retry-After`; let a retry-capable exporter handle backpressure. It binds to loopback only. This preview is a local development receiver, not a remote hosted collector.
+JSON still works if you set `OTEL_EXPORTER_OTLP_LOGS_PROTOCOL=http/json`. Environment variables configure an installed exporter; they do not instrument your application automatically. Keep batches at 16 records for the default timeouts. The receiver accepts uncompressed or gzip JSON and protobuf, up to 1 MiB and 100 records per request, with four evaluations in flight. Concurrent batches receive HTTP 503 with `Retry-After`; let a retry-capable exporter handle backpressure. It binds to loopback only. This preview is a local development receiver, not a remote hosted collector.
 
 ### Embed the same receiver in an npm application
 
@@ -165,7 +166,7 @@ JSONL: one JSON value per line. Objects can use these fields:
 | Option | Behavior |
 | --- | --- |
 | No arguments / `--demo` | Offline sample demo; custom files are not accepted |
-| `--live` | Start the local OTLP HTTP/JSON receiver |
+| `--live` | Start the local OTLP HTTP receiver (JSON or protobuf) |
 | `--sample` | With `--live`, evaluate sample records and exit |
 | `--config <path>` | Override the root `jevlogs.config.json` location |
 | `--port <number>` | Override the local receiver port |
