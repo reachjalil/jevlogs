@@ -1,0 +1,492 @@
+{
+  "created_at": "2026-09-17T20:15:59.528Z",
+  "recommended_trigger": "page_now.probability >= 0.5",
+  "questions": [
+    "page_now"
+  ],
+  "tweak": {
+    "v3": "Single boolean page_now with INFO-not-veto instructions. No urgency choice, no data_at_risk.",
+    "score_gap": {
+      "gold_page_now_min": 0.7,
+      "gold_page_now_max": 0.98,
+      "noise_page_now_max": 0.18
+    }
+  },
+  "prices": {
+    "jev": {
+      "input": 0.042,
+      "output": 0,
+      "url": "https://vercel.com/ai-gateway/models/jev",
+      "source": "metrics-only"
+    }
+  },
+  "spend_v3": {
+    "jev_calls": 3000,
+    "input_tokens": 1481333,
+    "output_tokens": 63000,
+    "estimated_usd": 0.06221598600000001,
+    "verify_on": "Vercel AI Gateway dashboard"
+  },
+  "jev_v3_page_now_p050": {
+    "n": 3000,
+    "unavailable_n": 0,
+    "page_recall": 1,
+    "page_precision": 1,
+    "false_page_on_ignore": 0,
+    "false_page_on_ticket": 0,
+    "trap_accuracy": 1,
+    "error_looking_not_paged": 1,
+    "info_incidents_paged": 1,
+    "confusion": {
+      "tp": 500,
+      "fp": 0,
+      "fn": 0,
+      "tn": 2500
+    },
+    "latency_p50_ms": 986.6331249999348,
+    "mean_input_tokens": 493.7776666666709,
+    "by_family": {
+      "replica_lag_data_risk": {
+        "n": 57,
+        "gold_page": 57,
+        "pred_page": 57,
+        "hit": 57
+      },
+      "tls_hours_left_serving": {
+        "n": 49,
+        "gold_page": 49,
+        "pred_page": 49,
+        "hit": 49
+      },
+      "disk_full_writes_failing": {
+        "n": 55,
+        "gold_page": 55,
+        "pred_page": 55,
+        "hit": 55
+      },
+      "revoked_key_used": {
+        "n": 51,
+        "gold_page": 51,
+        "pred_page": 51,
+        "hit": 51
+      },
+      "checksum_corruption": {
+        "n": 45,
+        "gold_page": 45,
+        "pred_page": 45,
+        "hit": 45
+      },
+      "checkout_slo_burn": {
+        "n": 50,
+        "gold_page": 50,
+        "pred_page": 50,
+        "hit": 50
+      },
+      "payments_processor_down": {
+        "n": 47,
+        "gold_page": 47,
+        "pred_page": 47,
+        "hit": 47
+      },
+      "crash_loop_user_impact": {
+        "n": 48,
+        "gold_page": 48,
+        "pred_page": 48,
+        "hit": 48
+      },
+      "credential_stuffing": {
+        "n": 48,
+        "gold_page": 48,
+        "pred_page": 48,
+        "hit": 48
+      },
+      "queue_backup_checkout": {
+        "n": 50,
+        "gold_page": 50,
+        "pred_page": 50,
+        "hit": 50
+      },
+      "queue_slow_growth": {
+        "n": 28,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 28
+      },
+      "cert_30d": {
+        "n": 29,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 29
+      },
+      "disk_80pct_48h": {
+        "n": 32,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 32
+      },
+      "cpu_high_no_impact": {
+        "n": 25,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 25
+      },
+      "single_pod_oom": {
+        "n": 26,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 26
+      },
+      "deprecation": {
+        "n": 30,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 30
+      },
+      "canary_within_budget": {
+        "n": 24,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 24
+      },
+      "replica_lag_seconds": {
+        "n": 25,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 25
+      },
+      "tls_expires_7d": {
+        "n": 13,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 13
+      },
+      "slow_slo_burn": {
+        "n": 18,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 18
+      },
+      "injection_noise": {
+        "n": 155,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 155
+      },
+      "health_ok": {
+        "n": 153,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 153
+      },
+      "kafka_caught_up": {
+        "n": 139,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 139
+      },
+      "invalid_coupon_error": {
+        "n": 161,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 161
+      },
+      "stack_trace_handled": {
+        "n": 166,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 166
+      },
+      "retry_then_ok": {
+        "n": 142,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 142
+      },
+      "feature_flag": {
+        "n": 141,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 141
+      },
+      "cache_hit": {
+        "n": 143,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 143
+      },
+      "metrics_scrape": {
+        "n": 164,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 164
+      },
+      "cron_ok": {
+        "n": 155,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 155
+      },
+      "rate_limit_bot": {
+        "n": 128,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 128
+      },
+      "http_404": {
+        "n": 159,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 159
+      },
+      "deploy_success": {
+        "n": 122,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 122
+      },
+      "user_not_found": {
+        "n": 147,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 147
+      },
+      "request_ok": {
+        "n": 175,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 175
+      }
+    }
+  },
+  "luna_unchanged": {
+    "n": 2870,
+    "unavailable_n": 130,
+    "page_recall": 0.962,
+    "page_precision": 1,
+    "false_page_on_ignore": 0,
+    "false_page_on_ticket": 0,
+    "trap_accuracy": 0.9848066298342542,
+    "error_looking_not_paged": 1,
+    "info_incidents_paged": 0.8070175438596491,
+    "confusion": {
+      "tp": 481,
+      "fp": 0,
+      "fn": 19,
+      "tn": 2370
+    },
+    "latency_p50_ms": 3774.242207999807,
+    "mean_input_tokens": 358.84982578397444,
+    "by_family": {
+      "replica_lag_data_risk": {
+        "n": 57,
+        "gold_page": 57,
+        "pred_page": 46,
+        "hit": 46
+      },
+      "tls_hours_left_serving": {
+        "n": 49,
+        "gold_page": 49,
+        "pred_page": 41,
+        "hit": 41
+      },
+      "disk_full_writes_failing": {
+        "n": 55,
+        "gold_page": 55,
+        "pred_page": 55,
+        "hit": 55
+      },
+      "revoked_key_used": {
+        "n": 51,
+        "gold_page": 51,
+        "pred_page": 51,
+        "hit": 51
+      },
+      "checkout_slo_burn": {
+        "n": 50,
+        "gold_page": 50,
+        "pred_page": 50,
+        "hit": 50
+      },
+      "payments_processor_down": {
+        "n": 47,
+        "gold_page": 47,
+        "pred_page": 47,
+        "hit": 47
+      },
+      "crash_loop_user_impact": {
+        "n": 48,
+        "gold_page": 48,
+        "pred_page": 48,
+        "hit": 48
+      },
+      "checksum_corruption": {
+        "n": 45,
+        "gold_page": 45,
+        "pred_page": 45,
+        "hit": 45
+      },
+      "credential_stuffing": {
+        "n": 48,
+        "gold_page": 48,
+        "pred_page": 48,
+        "hit": 48
+      },
+      "queue_backup_checkout": {
+        "n": 50,
+        "gold_page": 50,
+        "pred_page": 50,
+        "hit": 50
+      },
+      "queue_slow_growth": {
+        "n": 28,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 28
+      },
+      "cert_30d": {
+        "n": 29,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 29
+      },
+      "disk_80pct_48h": {
+        "n": 32,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 32
+      },
+      "cpu_high_no_impact": {
+        "n": 25,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 25
+      },
+      "single_pod_oom": {
+        "n": 26,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 26
+      },
+      "deprecation": {
+        "n": 30,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 30
+      },
+      "canary_within_budget": {
+        "n": 24,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 24
+      },
+      "replica_lag_seconds": {
+        "n": 25,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 25
+      },
+      "tls_expires_7d": {
+        "n": 13,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 13
+      },
+      "slow_slo_burn": {
+        "n": 18,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 18
+      },
+      "injection_noise": {
+        "n": 25,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 25
+      },
+      "health_ok": {
+        "n": 153,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 153
+      },
+      "kafka_caught_up": {
+        "n": 139,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 139
+      },
+      "invalid_coupon_error": {
+        "n": 161,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 161
+      },
+      "stack_trace_handled": {
+        "n": 166,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 166
+      },
+      "retry_then_ok": {
+        "n": 142,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 142
+      },
+      "feature_flag": {
+        "n": 141,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 141
+      },
+      "cache_hit": {
+        "n": 143,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 143
+      },
+      "metrics_scrape": {
+        "n": 164,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 164
+      },
+      "cron_ok": {
+        "n": 155,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 155
+      },
+      "rate_limit_bot": {
+        "n": 128,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 128
+      },
+      "http_404": {
+        "n": 159,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 159
+      },
+      "deploy_success": {
+        "n": 122,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 122
+      },
+      "user_not_found": {
+        "n": 147,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 147
+      },
+      "request_ok": {
+        "n": 175,
+        "gold_page": 0,
+        "pred_page": 0,
+        "hit": 175
+      }
+    }
+  }
+}

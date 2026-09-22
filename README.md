@@ -425,7 +425,7 @@ Check actual billing and token usage before budgeting. Provider speed and cost b
 
 ## Data stays under your control
 
-Only the log body and severity enter the model request; arbitrary OTel attributes are not sent. The SDK redacts common labeled secrets, Bearer tokens, and email addresses before transmission. Supply a domain-specific `redact(text)` hook for your own data policy. The default is not comprehensive PII detection.
+Only the log body, severity, and service name enter the model request; arbitrary OTel attributes are not sent. The SDK redacts common labeled secrets, Bearer tokens, and email addresses before transmission. Supply a domain-specific `redact(text)` hook for your own data policy. The default is not comprehensive PII detection.
 
 Keep Gateway credentials on the server. Mark audit, security, and compliance records as protected. Evaluate incident recall on labeled logs before enabling analysis filtering, and periodically review a sample of bypassed events. Typed outputs can still contain incorrect decisions.
 
@@ -449,10 +449,16 @@ The default redactor transforms the **model-bound copy**, not the original recor
 | OpenTelemetry Logs integration | Annotation, analysis-branch routing, local OTLP receiver with forwarding |
 | Astro website and guide | [Deployed on Cloudflare](https://jevlogs.workspaceagent.workers.dev) |
 | Automated checks | [Live CI status](https://github.com/reachjalil/jevlogs/actions/workflows/ci.yml) |
-| Live Jev accuracy and production savings | Not yet independently validated for this project |
+| Live Jev accuracy and production savings | Loghub-derived sample published 2026-09-16; not production logs |
 | `jevlogs.com` | Domain connection pending |
 
 The AI SDK's `experimental_evaluate` API is pinned and experimental. Jev is a hosted model; this repository makes the **integration SDK** open source. This is an independent project, not an official GitHub, TypeSafe, Vercel, or OpenTelemetry product.
+
+## Benchmark
+
+A reproducible run of the **0.3.0** tree (`cache: false` for E1–E5, then default cache and retain rules for E7–E8) on sanitized Loghub HDFS and BGL samples is on Hugging Face ([dataset](https://huggingface.co/datasets/reachjalil/jevlogs-log-triage-benchmark), [Space](https://huggingface.co/spaces/reachjalil/jevlogs-triage-explorer); write-up at [`docs/article/jevlogs-log-triage-findings.md`](docs/article/jevlogs-log-triage-findings.md)). On 2026-09-16, default routing retained 0.84% of a 30%-anomalous HDFS sample (5 of 750 block-labeled “anomalies,” all successful block verifications) and relied on the local FATAL rule for 100% of sampled BGL alerts. The default cache reused 96.5% of HDFS decisions (88 unique bodies in 2,500 lines); that hit rate is a property of repetition, not a promise for mixed production streams.
+
+The pager bake-off is written up in [`docs/article/jev-vs-luna-pagerduty.md`](docs/article/jev-vs-luna-pagerduty.md) and [`docs/article/effective-log-triage-with-jev.md`](docs/article/effective-log-triage-with-jev.md).
 
 ## Launch artwork
 

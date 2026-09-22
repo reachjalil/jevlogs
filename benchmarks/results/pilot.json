@@ -1,0 +1,15 @@
+{
+  "n": 20,
+  "mean_input_tokens": 535.6,
+  "total_input_tokens": 8034,
+  "estimated_spend_usd_so_far": 0.000337428,
+  "estimated_full_model_calls": 4477,
+  "extrapolated_full_spend_usd": 0.10071101040000001,
+  "jev_usd_per_million_input": 0.042,
+  "plan": {
+    "n_per_dataset": 2500,
+    "anomaly_fraction": 0.3,
+    "consistency": 200,
+    "adversarial_pairs": 40
+  }
+}

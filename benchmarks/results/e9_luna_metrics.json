@@ -1,0 +1,122 @@
+{
+  "created_at": "2026-09-17T08:25:44.804Z",
+  "model": "openai/gpt-5.6-luna",
+  "via": "vercel-ai-gateway",
+  "gateway_page": "https://vercel.com/ai-gateway/models/gpt-5.6-luna",
+  "openai_page": "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+  "n_per_dataset": 400,
+  "retain_rule": "same as jevlogs: retain iff priority=low AND value<=25 AND actionableProbability<0.1; ERROR/FATAL protected locally",
+  "prices": {
+    "luna": {
+      "input": 0.2,
+      "output": 1.2,
+      "url": "https://vercel.com/ai-gateway/models/gpt-5.6-luna",
+      "source_snippet": "List pricing is $0.2 per million input tokens and $1.2 per million output tokens"
+    },
+    "jev": {
+      "input": 0.042,
+      "output": 0,
+      "url": "https://vercel.com/ai-gateway/models/jev",
+      "source_snippet": "Input: 0.042"
+    }
+  },
+  "spend": {
+    "luna_calls_with_usage": 652,
+    "input_tokens": 192676,
+    "output_tokens": 35574,
+    "estimated_spend_usd": 0.081224,
+    "verify_on": "Vercel AI Gateway dashboard",
+    "note": "Luna billed through the same Gateway key as Jev. Dollar figure is input\u00d7fetched Luna input + output\u00d7fetched Luna output."
+  },
+  "hdfs": {
+    "n": 400,
+    "anomaly_n": 120,
+    "luna_anomaly_recall": 0.8333333333333334,
+    "luna_routing_rate_retain": 0.14,
+    "precision_retain": 0.6428571428571429,
+    "protected_n": 0,
+    "unavailable_n": 0,
+    "paired_with_jev_n": 400,
+    "route_agreement_with_jev": 0.865,
+    "latency_p50_ms": 5052.1070419999305,
+    "latency_p95_ms": 13620.899959000002,
+    "mean_input_tokens": 298.785,
+    "mean_output_tokens": 40.4525,
+    "total_input_tokens": 119514,
+    "total_output_tokens": 16181,
+    "jev_anomaly_recall": 0.9916666666666667,
+    "jev_routing_rate_retain": 0.01,
+    "luna_missed_anomalies": 20,
+    "luna_model_priority_mix": {
+      "high": 4,
+      "low": 386,
+      "normal": 10
+    },
+    "disagreements_with_jev": [
+      {
+        "jev": "analyze",
+        "luna": "retain",
+        "label": "normal",
+        "n": 33
+      },
+      {
+        "jev": "analyze",
+        "luna": "retain",
+        "label": "anomaly",
+        "n": 20
+      },
+      {
+        "jev": "retain",
+        "luna": "analyze",
+        "label": "anomaly",
+        "n": 1
+      }
+    ]
+  },
+  "bgl": {
+    "n": 400,
+    "anomaly_n": 120,
+    "luna_anomaly_recall": 1,
+    "luna_routing_rate_retain": 0.02,
+    "precision_retain": 1,
+    "protected_n": 132,
+    "unavailable_n": 31,
+    "paired_with_jev_n": 400,
+    "route_agreement_with_jev": 0.9725,
+    "latency_p50_ms": 7396.63204099983,
+    "latency_p95_ms": 17909.114917000057,
+    "mean_input_tokens": 290.084388185654,
+    "mean_output_tokens": 78.73417721518987,
+    "total_input_tokens": 68750,
+    "total_output_tokens": 18660,
+    "jev_anomaly_recall": 1.0,
+    "jev_routing_rate_retain": 0.0075,
+    "luna_missed_anomalies": 0,
+    "luna_model_priority_mix": {
+      "high": 120,
+      "low": 36,
+      "normal": 79,
+      "critical": 2
+    },
+    "disagreements_with_jev": [
+      {
+        "jev": "analyze",
+        "luna": "retain",
+        "label": "normal",
+        "n": 8
+      },
+      {
+        "jev": "retain",
+        "luna": "analyze",
+        "label": "normal",
+        "n": 3
+      }
+    ]
+  },
+  "cost_per_model_call": {
+    "jev_usd_estimated_from_luna_prompt_size": 1.2548970000000003e-05,
+    "luna_usd": 0.00012457668711656443,
+    "jev_usd": 1.2548970000000003e-05
+  },
+  "note": "400 stratified lines/dataset from the same seed 20260916 sample. BGL unavailable_n=31 are Gateway 503/abort rows recorded as analyze; all 31 were label=normal. HDFS had 0 unavailable."
+}
