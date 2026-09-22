@@ -5,6 +5,14 @@ import { LoggerProvider, BatchLogRecordProcessor } from '@opentelemetry/sdk-logs
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
 const evaluator = async () => ({value:0,priority:'low',actionableProbability:0.01});
 const payload = {resourceLogs:[{resource:{attributes:[{key:'service.name',value:{stringValue:'demo'}}]},scopeLogs:[{scope:{name:'test'},logRecords:[{body:{stringValue:'health'},severityNumber:9,traceId:'a'.repeat(32)}]}]}]};
+test('receiver sends resource service.name to the model and keeps other attributes local',async()=>{
+ let state='';
+ const receiver=await startJevLogsServer({port:0,evaluator:async next=>{state=next;return evaluator();},onLog:()=>{}});
+ try {
+  const r=await fetch(receiver.url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
+  assert.equal(r.status,200);assert.match(state,/orders-db|demo/);assert.match(state,/"service":"demo"/);assert.equal(state.includes('trace'),false);
+ } finally { await receiver.close(); }
+});
 test('standard HTTP JSON exporter interoperates and preserves the original record',async()=>{
  const events=[];const receiver=await startJevLogsServer({port:0,evaluator,onLog:e=>events.push(e)});
  try {

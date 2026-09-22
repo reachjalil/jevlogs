@@ -2,7 +2,7 @@
 
 Jev Logs is a small decision layer before expensive LLM log analysis. Use it from a terminal, in a TypeScript job, or inside your existing Node.js OpenTelemetry Logs pipeline. It assigns diagnostic value, urgency, and an analysis recommendation. Your existing system remains responsible for storing logs, delivering events, and running deeper analysis.
 
-**Current release: 0.3.0, public preview.** The SDK and CLI are on npm. The default demo is offline; live evaluation needs `AI_GATEWAY_API_KEY` and Jev access through Vercel AI Gateway. Production accuracy and savings have not been independently validated for this project.
+**Current release: 0.5.0, public preview.** The SDK and CLI are on npm. The default demo is offline; live evaluation needs `AI_GATEWAY_API_KEY` and Jev access through Vercel AI Gateway. Production accuracy and savings have not been independently validated for this project.
 
 ## Start a local OpenTelemetry receiver with one config
 
@@ -46,8 +46,11 @@ The default config is read from your current working directory. Use `--config ./
 | `forwardUrl` | None | OTLP HTTP/JSON logs endpoint that receives the annotated batch, for example your Collector at `http://127.0.0.1:4320/v1/logs` |
 | `forwardMode` | `annotate` | `annotate` forwards every record with `jev.*` attributes; `analysis-only` forwards only records routed to analysis |
 | `rules` | `[]` | Regular expressions tested against the redacted body before any model call; first match wins |
-| `cacheSize` | `1000` | Decisions kept in memory, keyed by a hash of the redacted model input; `0` disables the cache |
+| `cacheSize` | `1000` | Decisions kept in memory, keyed by a hash of the normalized redacted input; `0` disables the cache |
 | `cacheTtlMs` | `300000` | How long a cached decision stays valid |
+| `normalizeTemplates` | `true` | Collapse identifiers in the cache key. `false` caches the exact redacted input. The model always sees the redacted original |
+| `maxModelCalls` | None | Cap model invocations. Further analysis records stay eligible with `reason: "budget"` |
+| `suppressForMs` | `0` | Pager cooldown for a repeated template. `0` disables it |
 
 ### Send logs from your application
 
@@ -106,7 +109,7 @@ console.log(server.url);
 
 `onLog` is called for every record, including those marked `retain`. Redaction applies to model input; the callback receives the original record, so apply your own storage policy. HTTP success acknowledges callback completion, not durable storage. Callback failures return OTLP partial-success counts; compliant clients do not retry rejected records in a partial-success response. Persist within your callback if delivery matters. Retried requests are not deduplicated.
 
-Only the body and severity go into model input, after the SDK's redaction. Errors and `jev.protected=true` records bypass inference. Resource attributes, scope and trace IDs remain available to your callback. Default redaction is a starting point, not a complete sensitive-data policy.
+Only the body, severity, and resource `service.name` go into model input, after the SDK's redaction. Errors and `jev.protected=true` records bypass inference for analysis routing. Other resource attributes, scope, and trace IDs remain available to your callback and are not sent. Default redaction is a starting point, not a complete sensitive-data policy. Cache keys additionally collapse repeated identifiers (IPs, UUIDs, timestamps, paths, long ids) unless `normalizeTemplates` is `false`. The model still sees the redacted original.
 
 For a one-time model demonstration instead of starting the receiver, run `npx jevlogs --live --sample`. File and stdin modes still work as finite batches.
 ### Forward annotated logs to your collector
@@ -189,7 +192,7 @@ JSONL: one JSON value per line. Objects can use these fields:
 {"body":"Audit: administrator role changed","protected":true}
 ```
 
-`body` takes precedence over `message`; `severityText` takes precedence over `level`. If neither body field exists, the whole object becomes the body. Arbitrary nested data inside that body may therefore be sent for evaluation. This is not an OTLP JSON decoder. Numeric `level` conventions from other loggers are not automatically translated to OTel severity; normalize them first.
+`body` takes precedence over `message`, then `msg`. `severityText` takes precedence over `level`. If none of those body fields exist, the whole object becomes the body. Arbitrary nested data inside that body may therefore be sent for evaluation. This is not an OTLP JSON decoder. Pino's numeric levels 10, 20, 30, 40, 50, and 60 map to TRACE through FATAL. Other numeric conventions are not translated; set `severityText` or `severityNumber` first. Optional `service` is included in model input.
 
 ### CLI reference
 
@@ -400,7 +403,7 @@ const jev = createJevLogs({
 });
 ```
 
-The default removes common labeled secrets, Bearer tokens, and email addresses. It is not complete PII detection. Only body and severity enter the standard model request; arbitrary OTel attributes are not included. Sensitive data embedded in a body still requires redaction. This hook changes the model-bound text, **not** the original log forwarded to your exporter. Apply separate redaction to your archive if necessary.
+The default removes common labeled secrets, Bearer tokens, and email addresses. It is not complete PII detection. Body, severity, and `service.name` enter the standard model request; arbitrary OTel attributes are not included. Sensitive data embedded in a body still requires redaction. This hook changes the model-bound text, **not** the original log forwarded to your exporter. Apply separate redaction to your archive if necessary.
 
 Gateway requests ask for zero data retention. Check the applicable provider account policies. Keep credentials server-side. Jev's structured outputs can still be wrong, and logs can contain adversarial instructions; protection rules are not a complete security classifier.
 
@@ -422,13 +425,58 @@ const estimate = estimateSavings({
 console.log(estimate);
 // baseline: 1200, triage: 29.4, withJev: 149.4,
 // savings: 1050.6, percent: approximately 87.55
+// breakEvenSkipFraction: about 0.0245
 ```
 
-Despite the parameter name, `retainedFraction` means the fraction retained **for downstream LLM analysis**, not the fraction archived. Include uncertainty, protected records, and failures in that fraction. The estimator conservatively budgets Jev triage for all input logs even though protected records bypass it in the SDK.
+Despite the parameter name, `retainedFraction` means the fraction retained **for downstream LLM analysis**, not the fraction archived. Include uncertainty, protected records, and failures in that fraction. The estimator conservatively budgets Jev triage for all input logs even though protected records bypass it in the SDK. `breakEvenSkipFraction` is `triage / baseline`: the share of logs that must skip downstream analysis for the filter to not raise the bill. `null` when baseline is 0. Greater than 1 means triage costs more than analyzing every log.
 
 Question overhead defaults to an estimated 400 tokens per log, not measured usage. The estimate assumes equal average log sizes and excludes storage, ingestion, hosting, retries, prompt caching, and discounts. At 100% analyzed, Jev adds cost. Compare actual bills and incident recall before claiming savings.
 
 Pricing references, checked September 16, 2026: [TypeSafe's launch announcement](https://typesafe.ai/blog/introducing-system-one-models-and-jev) lists $0.042/M input and free output; [Vercel Gateway](https://vercel.com/ai-gateway/models/jev) displays $0.04/M. The [Vercel announcement](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway) documents the experimental evaluate API used here. Provider benchmarks are not Jev Logs benchmarks.
+
+## 7. Page on a probability
+
+`createJevLogs()` decides whether a record deserves deeper analysis. `createJevPager()` decides whether to wake somebody up. It asks Jev a single boolean, `page_now`, and compares `probability` with `pageAbove` (default `0.5`, allowed range 0.05–0.95).
+
+```ts
+import { createJevPager, shouldPage } from 'jevlogs';
+
+const pager = createJevPager({ pageAbove: 0.5 });
+const decision = await pager.decide({
+  service: 'orders-db',
+  severityText: 'INFO',
+  body: 'Replica lag 47m on primary still accepting writes',
+});
+// decision.page is true when decision.probability >= 0.5
+shouldPage(decision.probability, 0.5);
+```
+
+ERROR text and `severityNumber` 17–20 are sent to the model. Paging on every error is a false-alarm machine: expected 404s and validation failures are errors. FATAL, CRITICAL, `severityNumber >= 21`, and `protected: true` page with no model call. Set `pageOnSeverity: 'error'` only if you accept that false-page rate, or `'never'` to bypass solely on `protected: true`.
+
+Timeouts, oversized input, and provider failures hold (`page: false`, `reason: 'unavailable'`) unless `pageOnUnavailable` is true. Rules still run first: `route: 'retain'` holds, `route: 'analyze'` pages, and protected records ignore rules.
+
+The CLI uses the same policy: `npx jevlogs --page` for the offline demo, or `npx jevlogs --live --page --file app.log`. `--page-above` overrides the threshold. The local OTLP receiver still emits analysis decisions, not page decisions.
+
+Repeated templates share a pager decision the same way they share a triage decision. `47m` and `12s` do not.
+
+`suppressForMs` (or `--suppress-ms`) holds later copies of a template that already paged. The first page still goes out. The window does not extend when a copy is held. Those copies do not call the model.
+
+## 8. Score labels before filtering
+
+```sh
+npx jevlogs --live --file incidents.jsonl --labels --json
+```
+
+```json
+{"body":"Replica lag 47m","severityText":"INFO","important":true}
+{"body":"GET /health","severityText":"INFO","label":"noise"}
+```
+
+`important: true`, or `label` of `incident`, `page`, `analyze`, `important`, or `signal`, means a human needed the record. `important: false`, or `label` of `noise`, `ignore`, `retain`, `ok`, `normal`, or `background`, means it should not be selected. The analysis path selects `route: "analyze"`. `--page` selects `page: true`. The stderr summary reports recall, precision, false positives, and miss line numbers. A miss sets exit code 2. Labels stay out of the model request.
+
+The same math is `scoreDecisions([{ important, selected, line }])`. Recall is null when nothing was important. Precision is null when nothing was selected.
+
+`maxModelCalls` limits how many records may call the model during that run. Rules, cache hits, and protected records do not spend it. Past the cap, triage keeps the record for analysis with `reason: "budget"`, and the pager holds.
 
 ## Troubleshooting
 
@@ -444,7 +492,7 @@ Pricing references, checked September 16, 2026: [TypeSafe's launch announcement]
 | Receiver answers 501 | The exporter is speaking gRPC. Use OTLP HTTP to `/v1/logs` (`http/protobuf` or `http/json`), not port 4317 / `application/grpc`. |
 | Receiver answers 503 | Forwarding to `forwardUrl` failed, or more than `maxRequests` batches were in flight. Retry-capable exporters resend the batch. Check `GET /stats`. |
 | A noisy line still reaches the model | Rules match the redacted body text, not the whole JSON record; check the pattern and remember protected records bypass rules. |
-| Numeric logger levels do not protect errors | Normalize to OTel `severityNumber` or a string `severityText`; arbitrary logger numbering is not translated. |
+| Numeric logger levels do not protect errors | Pino levels 10–60 are mapped. Other schemes need an OpenTelemetry `severityNumber` or a string `severityText`. |
 | A TypeScript declaration cannot resolve OTel | Install `@opentelemetry/sdk-logs@0.222.0`, which provides the exporter's referenced types. |
 
 ## What this release does not include

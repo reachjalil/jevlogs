@@ -83,8 +83,11 @@ The default config is read from your current working directory. Use `--config ./
 | `forwardUrl` | None | OTLP HTTP/JSON logs endpoint that receives the annotated batch, for example your Collector at `http://127.0.0.1:4320/v1/logs` |
 | `forwardMode` | `annotate` | `annotate` forwards every record with `jev.*` attributes; `analysis-only` forwards only records routed to analysis |
 | `rules` | `[]` | Regular expressions tested against the redacted body before any model call; first match wins |
-| `cacheSize` | `1000` | Decisions kept in memory, keyed by a hash of the redacted model input; `0` disables the cache |
+| `cacheSize` | `1000` | Decisions kept in memory, keyed by a hash of the normalized redacted input; `0` disables the cache |
 | `cacheTtlMs` | `300000` | How long a cached decision stays valid |
+| `normalizeTemplates` | `true` | Collapse IPs, UUIDs, timestamps, paths, and long ids in the cache key. The model still sees the redacted original. `false` caches exact inputs |
+| `maxModelCalls` | None | Stop calling the model after this many invocations. Later analysis records stay eligible with `reason: "budget"`. The pager holds |
+| `suppressForMs` | `0` | With `--page`, hold repeats of a template that already paged, for up to 24 hours |
 
 ### Send logs from your application
 
@@ -143,7 +146,7 @@ console.log(server.url);
 
 `onLog` is called for every record, including those marked `retain`. Redaction applies to model input; the callback receives the original record, so apply your own storage policy. HTTP success acknowledges callback completion, not durable storage. Callback failures return OTLP partial-success counts; compliant clients do not retry rejected records in a partial-success response. Persist within your callback if delivery matters. Retried requests are not deduplicated.
 
-Only the body and severity go into model input, after the SDK's redaction. Errors and `jev.protected=true` records bypass inference. Resource attributes, scope and trace IDs remain available to your callback. Default redaction is a starting point, not a complete sensitive-data policy.
+Only the body, severity, and `service.name` go into model input, after the SDK's redaction. Other resource attributes, scope, and trace IDs stay on the callback record and are not sent. Errors and `jev.protected=true` records bypass inference. Default redaction is a starting point, not a complete sensitive-data policy.
 
 For a one-time model demonstration instead of starting the receiver, run `npx jevlogs --live --sample`. File and stdin modes still work as finite batches.
 ### Forward annotated logs to your collector
@@ -227,7 +230,8 @@ Live mode sends redacted log bodies to Vercel AI Gateway / TypeSafe and incurs p
 <details>
 <summary><strong>CLI input, limits, and exit codes</strong></summary>
 
-- Accepts plain text or JSONL with `body`/`message`, `severityNumber`, `severityText`/`level`, and `protected`.
+- Accepts plain text or JSONL with `body`/`message`/`msg`, `severityNumber`, `severityText`/`level`, `service`, and `protected`.
+- Pino levels 10, 20, 30, 40, 50, and 60 map to TRACE, DEBUG, INFO, WARN, ERROR, and FATAL.
 - Processes 20 records by default, up to 100 with `--limit`; total input is capped at 1 MiB.
 - `--follow` streams stdin line by line with no record limit, four evaluations in flight, and ends at EOF.
 - `--json` emits one decision per line without raw bodies. Headers and summaries go to stderr.
@@ -255,6 +259,33 @@ const decision = await jev.triage({
 console.log(decision);
 // value · priority · route · actionableProbability · reason
 ```
+
+### Page from a probability
+
+Analysis routing and paging are different decisions. Paging on `ERROR`, or on a discrete label such as `urgency: "page"`, either misses quiet incidents or wakes people up for expected errors. Ask one boolean question and keep the threshold in your code:
+
+```ts
+import { createJevPager } from 'jevlogs';
+
+const pager = createJevPager({ pageAbove: 0.5 });
+const decision = await pager.decide({
+  service: 'orders-db',
+  severityText: 'INFO',
+  body: 'Replica lag 47m on primary still accepting writes',
+});
+
+if (decision.page) console.log(`page p=${decision.probability}`);
+```
+
+`decision.page` is `probability >= pageAbove`. ERROR lines are still sent to the model. FATAL, CRITICAL, and `protected: true` page immediately. A timeout holds (`page: false`) unless you set `pageOnUnavailable: true`. `suppressForMs` holds later copies of a template that already paged, so a crash loop pages once per window. The same policy is available as `npx jevlogs --page` and `npx jevlogs --live --page --file app.log`. `--page-above` accepts 0.05–0.95. The OTLP receiver continues to emit analysis routes.
+
+### Score a labeled file before you filter
+
+```sh
+npx jevlogs --live --file incidents.jsonl --labels --json
+```
+
+Each record can set `important: true` or `label: "incident"` when a human needed it, and `important: false` or `label: "noise"` when it should be skipped. The summary prints recall and precision. A missed important record exits 2. `scoreDecisions()` is the same calculation in code. `maxModelCalls` caps how many of those lines can reach the model; past the cap, analysis routing keeps the record and the pager holds.
 
 Requires **Node.js 22+** and a server-side `AI_GATEWAY_API_KEY` for live evaluation. The standalone API and CLI do not require OpenTelemetry at runtime. TypeScript projects checking dependency declarations may also need the OTel peer because the package exports its exporter types. Importing the library does not run the CLI.
 
@@ -376,7 +407,7 @@ Triage   = logs × (input tokens + question tokens) × Jev input rate / 1M
 With Jev = triage + baseline × fraction still analyzed
 ```
 
-Use the same calculation in code with `estimateSavings()`. Excludes storage, ingestion, hosting, retries, discounts, caching, and additional analysis prompt overhead. Savings can be negative when too many records still need analysis. This reduces analysis spend, not archive storage charges.
+Use the same calculation in code with `estimateSavings()`. `breakEvenSkipFraction` is the share of logs that must skip downstream analysis for triage not to increase the bill. Above 1, triage costs more than analyzing every log. Excludes storage, ingestion, hosting, retries, discounts, caching, and additional analysis prompt overhead. Savings can be negative when too many records still need analysis. This reduces analysis spend, not archive storage charges.
 
 <details>
 <summary><strong>Published pricing and model context</strong></summary>
@@ -402,9 +433,9 @@ Keep Gateway credentials on the server. Mark audit, security, and compliance rec
 
 This release handles **Node.js log records** and OTLP HTTP JSON or protobuf from any language through the local receiver. It does not include a hosted dashboard, log storage, a Collector plugin, trace/metric sampling, automatic logger instrumentation, a durable queue, or a downstream reasoning-model client. It does not explain root causes or automatically remediate incidents.
 
-The file/stdin CLI modes process finite input after EOF, up to 1 MiB and 100 selected records. Plain text and simple JSONL are supported in those modes. `--live` alone runs the local OTLP HTTP receiver documented above. `--stdin --follow` evaluates a live stream line by line. There is no gRPC receiver. Numeric logger levels in file inputs require normalization to OTel severity.
+The file/stdin CLI modes process finite input after EOF, up to 1 MiB and 100 selected records. Plain text and simple JSONL are supported in those modes, including Pino's `msg` and levels 10–60. `--live` alone runs the local OTLP HTTP receiver documented above. `--stdin --follow` evaluates a live stream line by line. There is no gRPC receiver. Other numeric level schemes still need a `severityText` or an OpenTelemetry `severityNumber`.
 
-The default redactor transforms the **model-bound copy**, not the original record sent to your exporter. Zero-data-retention is requested through Gateway, while your archive policies remain your responsibility. Identical redacted inputs share one model call and are cached in memory for five minutes by default; there are no automatic model retries.
+The default redactor transforms the **model-bound copy**, not the original record sent to your exporter. Zero-data-retention is requested through Gateway, while your archive policies remain your responsibility. Identical templates share one model call and are cached in memory for five minutes by default. The cache key collapses identifiers; the model still receives the redacted original, so `47m` and `12s` do not share a decision. There are no automatic model retries.
 
 `estimateSavings().retainedFraction` is the fraction **still sent to the downstream LLM**, including protected and uncertain records; it is not your archive retention rate. Start with annotation, measure incident recall and costs, then choose whether to enable filtering.
 
@@ -414,7 +445,7 @@ The default redactor transforms the **model-bound copy**, not the original recor
 
 | Component | Status |
 | :--- | :--- |
-| npm library and `npx jevlogs` CLI | Available in `jevlogs@0.3.0` |
+| npm library and `npx jevlogs` CLI | 0.5.0 in this repository |
 | OpenTelemetry Logs integration | Annotation, analysis-branch routing, local OTLP receiver with forwarding |
 | Astro website and guide | [Deployed on Cloudflare](https://jevlogs.workspaceagent.workers.dev) |
 | Automated checks | [Live CI status](https://github.com/reachjalil/jevlogs/actions/workflows/ci.yml) |

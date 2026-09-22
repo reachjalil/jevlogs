@@ -36,6 +36,12 @@ export interface JevServerStats {
 }
 function object(value: unknown): value is ObjectValue { return value !== null && typeof value === 'object' && !Array.isArray(value); }
 function list(value: unknown): unknown[] { if (value === undefined) return []; if (!Array.isArray(value)) throw new Error('Expected an array'); return value; }
+function stringAttribute(attributes: unknown, key: string): string | undefined {
+  if (!Array.isArray(attributes)) return undefined;
+  const found = attributes.find(item => object(item) && item.key === key);
+  const value = found ? anyValue((found as ObjectValue).value) : undefined;
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
 function anyValue(value: unknown): unknown {
   if (!object(value)) return value;
   for (const key of ['stringValue', 'boolValue', 'intValue', 'doubleValue', 'bytesValue']) if (key in value) return value[key];
@@ -193,7 +199,8 @@ export async function startJevLogsServer(options: JevServerOptions) {
         const release = await slots.acquire();
         try {
           const record = event.logRecord;
-          decisions.set(record, await jev.triage({ body: anyValue(record.body), severityNumber: record.severityNumber as number | undefined, severityText: typeof record.severityText === 'string' ? record.severityText : undefined, protected: list(record.attributes).some(a => object(a) && a.key === 'jev.protected' && anyValue(a.value) === true) }));
+          const service = stringAttribute(object(event.resource) ? event.resource.attributes : undefined, 'service.name');
+          decisions.set(record, await jev.triage({ body: anyValue(record.body), severityNumber: record.severityNumber as number | undefined, severityText: typeof record.severityText === 'string' ? record.severityText : undefined, protected: list(record.attributes).some(a => object(a) && a.key === 'jev.protected' && anyValue(a.value) === true), ...(service ? { service } : {}) }));
         } finally { release(); }
       }));
       let upstream: ObjectValue | undefined;

@@ -1,6 +1,6 @@
 {
   "name": "jevlogs",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "Confidence-aware log triage with Jev and OpenTelemetry",
   "type": "module",
   "license": "MIT",

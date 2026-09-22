@@ -4,7 +4,7 @@
 
 Open-source TypeScript log triage for [OpenTelemetry](https://opentelemetry.io/) logs. Jev Logs sits between your existing pipeline and an expensive reasoning model. It scores diagnostic value, assigns urgency, and recommends whether a record deserves deeper LLM analysis.
 
-- **Package:** [`jevlogs`](https://www.npmjs.com/package/jevlogs) v0.3.0, MIT license, Node.js 22+
+- **Package:** [`jevlogs`](https://www.npmjs.com/package/jevlogs) v0.5.0, MIT license, Node.js 22+
 - **Site:** https://jevlogs.com
 - **Guide (markdown):** https://jevlogs.com/guide.md
 - **Source:** https://github.com/reachjalil/jevlogs

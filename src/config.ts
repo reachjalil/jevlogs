@@ -12,8 +12,14 @@ export interface JevConfig {
   rules?: Rule[];
   /** Derived from cacheSize and cacheTtlMs in the JSON file. */
   cache?: CacheOptions | false;
+  /** Default true. Set false to cache exact redacted inputs instead of normalized templates. */
+  normalizeTemplates?: boolean;
+  /** Model invocations for this process. 0 allows none. */
+  maxModelCalls?: number;
+  /** Pager cooldown for a repeated template. 0 disables. The analysis receiver ignores this. */
+  suppressForMs?: number;
 }
-const KEYS = ['port', 'envFile', 'retainBelow', 'timeoutMs', 'maxInputChars', 'forwardUrl', 'forwardMode', 'rules', 'cacheSize', 'cacheTtlMs'];
+const KEYS = ['port', 'envFile', 'retainBelow', 'timeoutMs', 'maxInputChars', 'forwardUrl', 'forwardMode', 'rules', 'cacheSize', 'cacheTtlMs', 'normalizeTemplates', 'maxModelCalls', 'suppressForMs'];
 /** JSON only: configuration never executes application code. Existing environment variables win. */
 export async function loadJevConfig(path?: string): Promise<JevConfig> {
   const filename = resolve(path ?? 'jevlogs.config.json');
@@ -37,6 +43,9 @@ export async function loadJevConfig(path?: string): Promise<JevConfig> {
   }
   if (config.forwardMode !== undefined && config.forwardMode !== 'annotate' && config.forwardMode !== 'analysis-only') throw new Error('Config forwardMode must be "annotate" or "analysis-only"');
   if (config.forwardMode !== undefined && config.forwardUrl === undefined) throw new Error('Config forwardMode requires forwardUrl');
+  if (config.normalizeTemplates !== undefined && typeof config.normalizeTemplates !== 'boolean') throw new Error('Config normalizeTemplates must be a boolean');
+  if (config.maxModelCalls !== undefined && (!Number.isInteger(config.maxModelCalls) || Number(config.maxModelCalls) < 0 || Number(config.maxModelCalls) > 1_000_000)) throw new Error('Config maxModelCalls must be an integer from 0 to 1000000');
+  if (config.suppressForMs !== undefined && (!Number.isInteger(config.suppressForMs) || Number(config.suppressForMs) < 0 || Number(config.suppressForMs) > 86_400_000)) throw new Error('Config suppressForMs must be an integer from 0 through 86400000');
   if (config.rules !== undefined) {
     try { compileRules(config.rules as Rule[]); } catch (error) { throw new Error(`Config ${error instanceof Error ? error.message : 'rules are invalid'}`); }
   }

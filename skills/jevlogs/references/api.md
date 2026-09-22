@@ -1,4 +1,4 @@
-# jevlogs API reference (verified against jevlogs 0.3.0)
+# jevlogs API reference (verified against jevlogs 0.5.0)
 
 Source of truth: `src/index.ts`, `src/server.ts`, `src/config.ts`, `src/cli.ts` in
 https://github.com/reachjalil/jevlogs. If this file and the code disagree, the code wins.
@@ -7,13 +7,13 @@ https://github.com/reachjalil/jevlogs. If this file and the code disagree, the c
 
 | Import | Exports |
 | --- | --- |
-| `jevlogs` | `createJevLogs`, `JevLogExporter`, `estimateSavings`, `redactCommonSecrets`, types `LogInput`, `Decision`, `Evaluation`, `Evaluator`, `JevOptions`, `ExporterOptions`, `CostInputs` |
+| `jevlogs` | `createJevLogs`, `createJevPager`, `shouldPage`, `normalizeLogTemplate`, `scoreDecisions`, `JevLogExporter`, `estimateSavings`, `redactCommonSecrets`, `compileRules`, `decisionAttributes`, types `LogInput`, `Decision`, `Evaluation`, `Evaluator`, `PageDecision`, `PageEvaluation`, `PageEvaluator`, `PageOptions`, `PageStats`, `JevOptions`, `JevStats`, `Rule`, `CacheOptions`, `ExporterOptions`, `CostInputs`, `ScoreRow`, `ScoreReport` |
 | `jevlogs/server` | `startJevLogsServer`, `loadJevConfig`, types `JevServerOptions`, `JevLogEvent`, `JevConfig` |
 | `npx jevlogs` | CLI (`dist/cli.js`) |
 
 Runtime: Node.js 22 or newer, ESM. Dependency: `ai@7.0.105` (Vercel AI SDK). Optional peer: `@opentelemetry/sdk-logs@0.222.0`, needed at runtime only for `JevLogExporter`, but TypeScript consumers may need it installed for the exported declarations to resolve.
 
-Nothing else is exported. There is no `analyze()`, no `explain()`, no cache, no retry helper, no downstream LLM client, no Collector plugin, no gRPC receiver.
+There is no `analyze()`, no `explain()`, no retry helper, no downstream LLM client, no Collector plugin, no gRPC receiver. The decision cache is inside `createJevLogs` / `createJevPager`; it is not a separate export.
 
 ## `createJevLogs(options?)`
 
@@ -32,7 +32,7 @@ interface Evaluation { value: number; priority: 'critical'|'high'|'normal'|'low'
 Out-of-range options throw `RangeError` at construction. Returns `{ triage(log: LogInput): Promise<Decision> }`.
 
 ```ts
-interface LogInput { body: unknown; severityNumber?: number; severityText?: string; protected?: boolean }
+interface LogInput { body: unknown; severityNumber?: number; severityText?: string; protected?: boolean; service?: string }
 interface Decision {
   value: number;                       // 0–100 rubric score
   priority: 'critical'|'high'|'normal'|'low';
@@ -47,8 +47,8 @@ interface Decision {
 ### Exact decision algorithm
 
 1. If `protected === true`, or `severityNumber >= 17`, or `severityText` matches `ERROR|FATAL|CRITICAL` (case-insensitive): return `{ value: 100, priority: 'critical', route: 'analyze', actionableProbability: null, reason: 'protected', cached: false }`. No network call.
-2. Serialize `{ body, severityText, severityNumber }` with `JSON.stringify`. If longer than `maxInputChars`: `reason: 'unavailable'` fallback.
-2a. (0.3.0) `rules` are tested against the redacted body text; first match returns `reason: 'rule'` (`retain` gives value 0 / low, `analyze` gives the fallback). Then the cache is checked by SHA-256 of the redacted state; hits return `cached: true`. Identical in-flight inputs share one model call.
+2. Serialize `{ body, severityText, severityNumber }` with `JSON.stringify`, plus `service` when it is a non-empty string (trimmed, max 128 characters). If longer than `maxInputChars`: `reason: 'unavailable'` fallback.
+2a. `rules` are tested against the redacted body text; first match returns `reason: 'rule'` (`retain` gives value 0 / low, `analyze` gives the fallback). Then the cache is checked by SHA-256 of the redacted state after `normalizeLogTemplate`, unless `normalizeTemplates` is false. Hits return `cached: true`. Identical in-flight templates share one model call. `service` is included in the serialized state when set.
 3. Run `redact` on that string. If it throws, returns a non-string, or the result exceeds `maxInputChars`: `unavailable` fallback.
 4. Call the evaluator with the redacted string, racing against `timeoutMs`. On timeout the abort signal fires.
 5. Validate the answer: probability in [0,1], value finite in [0,100], priority in the four allowed strings. Anything else: `unavailable` fallback.
@@ -57,7 +57,7 @@ interface Decision {
 
 The `unavailable` fallback is `{ value: 100, priority: 'high', route: 'analyze', actionableProbability: null, reason: 'unavailable' }`. Provider error details are not exposed. There are no automatic retries (`maxRetries: 0` is passed to the AI SDK). Failures are never cached.
 
-0.3.0 additions: `createJevLogs({ rules, cache })`, `jev.stats()`, `JevLogExporter#stats()`, `startJevLogsServer({ forwardUrl, forwardMode, forwardHeaders, forwardTimeoutMs, concurrency, maxRequests })` with `onLog` optional when forwarding, `GET /stats`, `parseOtlpHeaders()`, `compileRules()`, `decisionAttributes()`, and the CLI flag `--follow` for streaming stdin. Config keys `forwardUrl`, `forwardMode`, `rules`, `cacheSize`, `cacheTtlMs`.
+0.3.0 additions: `createJevLogs({ rules, cache })`, `jev.stats()`, `JevLogExporter#stats()`, `startJevLogsServer({ forwardUrl, forwardMode, forwardHeaders, forwardTimeoutMs, concurrency, maxRequests })` with `onLog` optional when forwarding, `GET /stats`, `parseOtlpHeaders()`, `compileRules()`, `decisionAttributes()`, and the CLI flag `--follow` for streaming stdin. Config keys `forwardUrl`, `forwardMode`, `rules`, `cacheSize`, `cacheTtlMs`, `normalizeTemplates`.
 
 ### What the default evaluator sends
 
@@ -71,7 +71,34 @@ One `experimental_evaluate` call with `model: 'typesafe-ai/jev'`, `state` = the 
 
 Each question's instructions tell Jev to treat the log as untrusted data and ignore embedded instructions. The rubric levels are: no useful signal, routine detail, useful context, actionable failure evidence, incident-defining evidence.
 
-`experimental_evaluate` also returns `usage: { inputTokens, outputTokens, totalTokens }`. The SDK discards it. To measure real usage, pass a custom `evaluator` (see `../examples/measured-evaluator.ts`).
+`experimental_evaluate` also returns `usage: { inputTokens, outputTokens, totalTokens }`. Successful calls add `inputTokens` to `stats()`. Output tokens are not stored. To measure anything else, pass a custom `evaluator` (see `../examples/measured-evaluator.ts`).
+
+## `createJevPager(options?)` and `shouldPage(probability, pageAbove?)`
+
+```ts
+interface PageOptions {
+  pageAbove?: number;              // default 0.5; must be 0.05–0.95
+  pageOnSeverity?: 'fatal' | 'error' | 'never'; // default 'fatal'
+  pageOnUnavailable?: boolean;     // default false
+  timeoutMs?: number; maxInputChars?: number; redact?: (text: string) => string;
+  evaluator?: PageEvaluator; rules?: Rule[]; cache?: CacheOptions | false; normalizeTemplates?: boolean;
+}
+interface PageDecision {
+  page: boolean; probability: number | null;
+  reason: 'model' | 'protected' | 'unavailable' | 'rule';
+  cached: boolean; rule?: string;
+}
+```
+
+`decide(log)` asks one boolean, `page_now`. `page` is `probability >= pageAbove`. `shouldPage` is that comparison and throws on an out-of-range threshold.
+
+Local bypass, before rules and the model: `protected: true` always pages. `fatal` (default) also pages FATAL/CRITICAL and `severityNumber >= 21`. `error` also pages ERROR and `severityNumber >= 17`. `never` bypasses only for `protected: true`. ERROR lines are scored by default because paging on severity is a false-alarm machine.
+
+A matching rule holds when `route` is `retain` and pages when `route` is `analyze`. Timeouts and failures hold unless `pageOnUnavailable` is true, and they are not cached. Template caching matches `createJevLogs`.
+
+## `normalizeLogTemplate(text)`
+
+Replaces UUIDs, ISO and `HH:MM:SS` timestamps, IPv4, IPv6, `blk_` ids, hex strings of 16+ characters, paths of two or more segments, and numbers of 6+ digits. Short values such as `47m` and `94%` are unchanged. Used for cache keys, not as the model input.
 
 ## `redactCommonSecrets(text)`
 
@@ -87,7 +114,7 @@ interface ExporterOptions extends JevOptions {
 }
 ```
 
-Implements `LogRecordExporter` (`export`, `forceFlush`, `shutdown`). Put it inside `BatchLogRecordProcessor`. Per record it calls `triage` with `body`, `severityNumber`, `severityText`, and `protected = attributes['jev.protected'] === true`, then forwards a **new** record object that copies body, severity, `hrTime`, `hrTimeObserved`, `spanContext`, `eventName`, `resource`, `instrumentationScope`, `droppedAttributesCount`, and attributes plus:
+Implements `LogRecordExporter` (`export`, `forceFlush`, `shutdown`). Put it inside `BatchLogRecordProcessor`. Per record it calls `triage` with `body`, `severityNumber`, `severityText`, `protected = attributes['jev.protected'] === true`, and `service` from resource attribute `service.name` when that value is a string. It then forwards a **new** record object that copies body, severity, `hrTime`, `hrTimeObserved`, `spanContext`, `eventName`, `resource`, `instrumentationScope`, `droppedAttributesCount`, and attributes plus:
 
 | attribute | value |
 | --- | --- |
@@ -116,7 +143,9 @@ interface CostInputs {
   jevInputPerMillion?: number;  // default 0.042
   questionTokensPerLog?: number;// default 400, an assumption for Jev question overhead
 }
-// returns { baseline, triage, withJev, savings, percent }
+// returns { baseline, triage, withJev, savings, percent, breakEvenSkipFraction }
+// breakEvenSkipFraction = baseline > 0 ? triage / baseline : null
+// Above 1, triage costs more than analyzing every log. null when baseline is 0.
 ```
 
 ```text
@@ -150,8 +179,29 @@ Reads JSON only (never executes code). Default path `./jevlogs.config.json`; a m
 | `retainBelow` | number | |
 | `timeoutMs` | number | |
 | `maxInputChars` | number | |
+| `forwardUrl` | string | absolute http(s) URL |
+| `forwardMode` | `"annotate"` or `"analysis-only"` | requires `forwardUrl` |
+| `rules` | array | same shape as `Rule`, match is a string |
+| `cacheSize` | number | `0` disables the cache; becomes `cache` on the returned object |
+| `cacheTtlMs` | number | |
+| `normalizeTemplates` | boolean | default true when omitted |
+| `maxModelCalls` | number | integer 0–1000000; omitted means no cap |
+| `suppressForMs` | number | integer 0–86400000; pager cooldown, ignored by analysis routing |
 
 Unknown keys throw. There is no key for the API key; it must come from the environment or `envFile`.
+
+## `scoreDecisions(rows)`
+
+```ts
+interface ScoreRow { important: boolean; selected: boolean; line?: number }
+// recall = truePositives / important, or null when important is 0
+// precision = truePositives / selected, or null when selected is 0
+// misses: line numbers of important rows that were not selected
+```
+
+For analysis, `selected` means `route === 'analyze'`. For paging, `selected` means `page === true`. Rows with a non-boolean `important` or `selected` throw. This function does not call a model.
+
+`Decision.reason` and `PageDecision.reason` include `budget` when `maxModelCalls` is exhausted. `PageDecision.reason` includes `suppressed` when `suppressForMs` holds a repeat. Analysis past the budget stays `route: 'analyze'`. A suppressed page is `page: false` and does not call the model.
 
 ## CLI
 
@@ -165,11 +215,18 @@ cat x | npx jevlogs --live --stdin  read to EOF, then evaluate
   --limit <1–100>  records to evaluate (default 20)
   --config <path>  config file (default ./jevlogs.config.json)
   --port <n>       receiver port override
+  --page           page/hold demo, or with --live a file/stdin page pass
+  --page-above <n> page threshold 0.05–0.95 (requires --page)
+  --suppress-ms <n> hold repeat pages of one template (requires --page)
+  --max-calls <n>  cap model invocations at n (0–1000000)
+  --labels         print recall and precision from important/label; miss exits 2
   --demo           explicit offline demo
   --help, -h / --version, -v
 ```
 
-Rules enforced by the parser: `--file`/`--stdin` require `--live`; `--live` and `--demo` are exclusive; `--file` and `--stdin` are exclusive; `--sample` requires `--live` without file/stdin. Total input 1 MiB; each line 8,000 chars. Plain-text lines get `severityText` from the first ERROR/FATAL/CRITICAL/WARN/INFO/DEBUG/TRACE word. JSONL fields: `body` (else `message`, else whole object), `severityNumber` (must be numeric), `severityText` (else `level`, upper-cased), `protected`.
+Rules enforced by the parser: `--file`/`--stdin` require `--live`; `--live` and `--demo` are exclusive; `--file` and `--stdin` are exclusive; `--sample` requires `--live` without file/stdin. Total input 1 MiB; each line 8,000 chars. Plain-text lines get `severityText` from the first ERROR/FATAL/CRITICAL/WARN/INFO/DEBUG/TRACE word. JSONL fields: `body` (else `message`, else `msg`, else whole object), `severityNumber` (must be numeric), `severityText` (else `level`; strings are upper-cased; Pino numbers 10–60 map to TRACE–FATAL and an OTel severity number), `service`, `protected`.
+
+`--page` uses `createJevPager` on a sample, file, or stdin stream. It does not switch the OTLP receiver. `--page-above` requires `--page` and must be 0.05–0.95. JSON lines add `"task":"page"` and a `page` boolean.
 
 `--json` line shape: `{"line":N,"mode":"demo"|"live",...Decision}` where `line` counts non-blank records, not physical lines.
 

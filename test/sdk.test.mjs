@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createJevLogs, JevLogExporter, estimateSavings, redactCommonSecrets } from '../dist/index.js';
+import { createJevLogs, createJevPager, JevLogExporter, estimateSavings, normalizeLogTemplate, redactCommonSecrets, scoreDecisions, shouldPage } from '../dist/index.js';
 import { LoggerProvider, BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 const low = async () => ({ value: 0, priority: 'low', actionableProbability: 0.02 });
 const makeRecord = (body = 'health ok', attributes = {}) => ({body, attributes, severityNumber: 9, hrTime:[1,0], hrTimeObserved:[1,0], resource:{attributes:{}}, instrumentationScope:{name:'test'}, droppedAttributesCount:0, spanContext:{traceId:'a'.repeat(32),spanId:'b'.repeat(16),traceFlags:1}});
@@ -70,6 +70,9 @@ test('savings includes triage overhead, output, negative savings, and validation
  assert.equal(estimateSavings({...args,logs:0}).percent,0);
  assert.throws(()=>estimateSavings({...args,retainedFraction:2}));
  assert.throws(()=>createJevLogs({retainBelow:.6}));
+ assert.equal(s.breakEvenSkipFraction, s.triage / s.baseline);
+ assert.ok(s.breakEvenSkipFraction < 1);
+ assert.equal(estimateSavings({...args, logs: 0}).breakEvenSkipFraction, null);
 });
 test('identical redacted inputs are served from the cache; TTL and disabling are honored',async()=>{
  let calls=0;const evaluator=async()=>{calls++;return low();};
@@ -111,4 +114,125 @@ test('exporter coalesces identical in-flight records and annotates cache and rul
  assert.equal(exporter.stats().cached,1);assert.equal(calls,1);
  const failing=createJevLogs({evaluator:async()=>{await new Promise(r=>setTimeout(r,3));throw Error('down');}});
  const [x,y]=await Promise.all([failing.triage({body:'same'}),failing.triage({body:'same'})]);assert.equal(x.reason,'unavailable');assert.equal(y.reason,'unavailable');
+});
+test('template normalization shares cache entries without hiding meaningful numbers', async () => {
+ assert.equal(normalizeLogTemplate('blk_1073741825 from 10.1.2.3 id 550e8400-e29b-41d4-a716-446655440000 at 2026-09-21T16:50:00.123Z /var/log/app.log'), '[BLOCK] from [IP] id [UUID] at [TIME] [PATH]');
+ assert.equal(normalizeLogTemplate('Replica lag 47m'), 'Replica lag 47m');
+ assert.equal(normalizeLogTemplate('pool at 94%'), 'pool at 94%');
+ let calls = 0;
+ const evaluator = async () => { calls++; return low(); };
+ const jev = createJevLogs({ evaluator });
+ await jev.triage({ body: 'connect 10.0.0.1 req deadbeefdeadbeef' });
+ await jev.triage({ body: 'connect 10.0.0.2 req cafebabecafebabe' });
+ assert.equal(calls, 1);
+ assert.equal((await jev.triage({ body: 'Replica lag 47m' })).cached, false);
+ assert.equal((await jev.triage({ body: 'Replica lag 12s' })).cached, false);
+ assert.equal(calls, 3);
+ const exact = createJevLogs({ evaluator, normalizeTemplates: false });
+ await exact.triage({ body: 'connect 10.0.0.1' });
+ await exact.triage({ body: 'connect 10.0.0.2' });
+ assert.equal(calls, 5);
+ assert.throws(() => createJevLogs({ normalizeTemplates: 'yes' }));
+});
+test('service name is the only extra field sent to the model', async () => {
+ let state = '';
+ const evaluator = async (next) => { state = next; return low(); };
+ await createJevLogs({ evaluator }).triage({ body: 'ok', service: ' orders-db ' });
+ assert.match(state, /"service":"orders-db"/);
+ await createJevLogs({ evaluator }).triage({ body: 'ok' });
+ assert.equal(state.includes('service'), false);
+ const downstream = target();
+ let seen = '';
+ const exporter = new JevLogExporter({ exporter: downstream, evaluator: async (next) => { seen = next; return low(); } });
+ const record = makeRecord('ok');
+ record.resource = { attributes: { 'service.name': 'checkout' } };
+ await send(exporter, [record]);
+ assert.match(seen, /"service":"checkout"/);
+});
+test('pager thresholds probability and does not page every error', async () => {
+ assert.equal(shouldPage(0.5, 0.5), true);
+ assert.equal(shouldPage(0.49, 0.5), false);
+ assert.equal(shouldPage(null, 0.5), false);
+ assert.throws(() => shouldPage(1, 0.01));
+ let calls = 0;
+ const evaluator = async state => { calls++; return { probability: state.includes('12s') ? 0.2 : 0.62 }; };
+ const pager = createJevPager({ evaluator, pageAbove: 0.5 });
+ const hit = await pager.decide({ body: 'Replica lag 47m', severityText: 'INFO', service: 'orders-db' });
+ assert.deepEqual(hit, { page: true, probability: 0.62, reason: 'model', cached: false });
+ const miss = await pager.decide({ body: 'Replica lag 12s', severityText: 'INFO' });
+ assert.equal(miss.page, false);
+ assert.equal(miss.reason, 'model');
+ const expected = await pager.decide({ body: 'expected 404', severityText: 'ERROR' });
+ assert.equal(expected.page, true);
+ assert.equal(expected.reason, 'model');
+ const fatal = await pager.decide({ body: 'aborted', severityText: 'FATAL' });
+ assert.equal(fatal.page, true);
+ assert.equal(fatal.reason, 'protected');
+ assert.equal(calls, 3);
+ const strict = createJevPager({ evaluator, pageOnSeverity: 'error' });
+ assert.equal((await strict.decide({ body: 'boom', severityNumber: 17 })).reason, 'protected');
+ assert.equal(calls, 3);
+ const quiet = createJevPager({ evaluator: async () => { throw Error('down'); } });
+ assert.equal((await quiet.decide({ body: 'maybe' })).page, false);
+ const loud = createJevPager({ evaluator: async () => { throw Error('down'); }, pageOnUnavailable: true });
+ assert.equal((await loud.decide({ body: 'maybe' })).page, true);
+ const ruled = createJevPager({ evaluator, rules: [{ name: 'health', match: '^GET /health', route: 'retain' }] });
+ assert.equal((await ruled.decide({ body: 'GET /health 200' })).page, false);
+ assert.equal((await ruled.decide({ body: 'GET /health 200', severityText: 'FATAL' })).reason, 'protected');
+ assert.throws(() => createJevPager({ pageAbove: 0.99 }));
+ assert.equal(pager.stats().page >= 1, true);
+});
+test('scoreDecisions reports recall, precision, and miss lines', () => {
+ const report = scoreDecisions([
+  { important: true, selected: true, line: 1 },
+  { important: true, selected: false, line: 4 },
+  { important: false, selected: true, line: 5 },
+  { important: false, selected: false, line: 6 },
+ ]);
+ assert.equal(report.recall, 0.5);
+ assert.equal(report.precision, 0.5);
+ assert.deepEqual(report.misses, [4]);
+ assert.equal(report.trueNegatives, 1);
+ assert.equal(scoreDecisions([]).recall, null);
+ assert.throws(() => scoreDecisions([{ important: true, selected: 'yes' }]));
+});
+test('model call budget fails open and does not spend calls on rules or errors', async () => {
+ let calls = 0;
+ const evaluator = async () => { calls++; return low(); };
+ const jev = createJevLogs({ evaluator, maxModelCalls: 1, cache: false });
+ assert.equal((await jev.triage({ body: 'first' })).reason, 'model');
+ const capped = await jev.triage({ body: 'second' });
+ assert.equal(capped.reason, 'budget');
+ assert.equal(capped.route, 'analyze');
+ assert.equal((await jev.triage({ body: 'third', severityText: 'ERROR' })).reason, 'protected');
+ assert.equal(calls, 1);
+ assert.equal(jev.stats().budget, 1);
+ const ruled = createJevLogs({ evaluator, maxModelCalls: 0, rules: [{ match: 'health', route: 'retain' }] });
+ assert.equal((await ruled.triage({ body: 'health ok' })).reason, 'rule');
+ assert.equal((await ruled.triage({ body: 'other' })).reason, 'budget');
+ assert.equal(calls, 1);
+ assert.throws(() => createJevLogs({ maxModelCalls: -1 }));
+});
+test('pager cooldown holds repeat templates and the budget holds instead of paging', async () => {
+ let calls = 0;
+ const evaluator = async () => { calls++; return { probability: 0.9 }; };
+ const pager = createJevPager({ evaluator, suppressForMs: 40, cache: false });
+ const first = await pager.decide({ body: 'connect 10.0.0.1', severityText: 'INFO' });
+ const second = await pager.decide({ body: 'connect 10.0.0.2', severityText: 'INFO' });
+ assert.equal(first.page, true);
+ assert.equal(second.page, false);
+ assert.equal(second.reason, 'suppressed');
+ assert.equal(second.suppressed, true);
+ assert.equal(calls, 1);
+ await new Promise(r => setTimeout(r, 50));
+ assert.equal((await pager.decide({ body: 'connect 10.0.0.3', severityText: 'INFO' })).page, true);
+ assert.equal(calls, 2);
+ const fatal = createJevPager({ evaluator, suppressForMs: 60_000 });
+ assert.equal((await fatal.decide({ body: 'aborted', severityText: 'FATAL' })).page, true);
+ assert.equal((await fatal.decide({ body: 'aborted', severityText: 'FATAL' })).reason, 'suppressed');
+ assert.equal(calls, 2);
+ const capped = createJevPager({ evaluator, maxModelCalls: 0 });
+ assert.equal((await capped.decide({ body: 'maybe', severityText: 'INFO' })).reason, 'budget');
+ assert.equal((await capped.decide({ body: 'maybe', severityText: 'INFO' })).page, false);
+ assert.equal(calls, 2);
 });

@@ -12,10 +12,10 @@ Jev's decisions are typed, but typed does not mean right. The project's own READ
 ## Step 2: run it
 
 ```bash
-npx jevlogs --live --stdin --json --limit 100 < sample.jsonl > decisions.jsonl
+npx jevlogs --live --file sample.jsonl --labels --json --limit 100 > decisions.jsonl
 ```
 
-Join `decisions.jsonl` back to the sample by `line` (one-based index over non-blank lines). Or call `createJevLogs().triage()` in a script and keep the label next to each decision.
+`--labels` reads `important: true/false` or `label` (`incident`/`noise` and the other words in `references/api.md`) and prints recall, precision, and miss lines on stderr. A miss exits 2. Labels are not sent to the model. `scoreDecisions()` is the same calculation when the decisions already exist. Joining by `line` still works if the file was scored without `--labels`.
 
 ## Step 3: metrics that matter
 

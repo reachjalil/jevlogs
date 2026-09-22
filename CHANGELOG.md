@@ -1,7 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-09-21
 
+Measure a filter before trusting it, and keep a page from repeating.
+
+- **Labeled scores.** `scoreDecisions()` and `npx jevlogs --labels` read `important` or `label` on each JSONL record and print recall, precision, and the lines that were missed. A miss exits 2. Labels are not sent to the model. `important: true` records must stay selected (`analyze`, or `page` when `--page` is set).
+- **Page cooldown.** `suppressForMs` holds later copies of a template that already paged, without another model call. `--suppress-ms` sets it. The window does not refresh on the held copies.
+- **Model-call budget.** `maxModelCalls` stops further model invocations. Analysis routing fails open (`reason: "budget"`, route `analyze`). The pager holds. Rules, cache hits, and local severity bypasses do not spend the budget.
+
+## 0.4.0 — 2026-09-21
+
+Paging, template caching, and cheaper repeat traffic. Analysis routing is unchanged: a record is retained only when it is confidently low-value.
+
+- **Pager.** `createJevPager()` asks Jev one boolean question, `page_now`, and `shouldPage()` applies your probability threshold in code (default 0.5). ERROR lines are scored, not auto-paged. FATAL, CRITICAL, `severityNumber >= 21`, and `protected: true` page with no model call. Timeouts hold by default so an outage does not page the world. `npx jevlogs --page` runs the same policy on a sample, file, or stdin stream.
+- **Template cache.** Cache keys collapse UUIDs, IPs, timestamps, paths, hex ids, block ids, and long numbers. Durations and short values such as `47m` and `94%` stay distinct, and the model still sees the redacted original. Set `normalizeTemplates: false` to cache exact inputs.
+- **Service name.** `service` on `triage()` / `decide()`, and resource `service.name` from the exporter and receiver, is included in model input. Other attributes stay local.
+- **Break-even.** `estimateSavings()` returns `breakEvenSkipFraction`, the share of logs that must skip downstream analysis for triage not to raise the bill.
+- **CLI levels.** JSONL accepts `msg`. Pino levels 10–60 map to OpenTelemetry severity, so numeric ERROR lines are protected on the analysis path.
 - **OTLP HTTP protobuf.** `POST /v1/logs` accepts `application/x-protobuf` in addition to JSON, including gzip. Java, Go, Python, and Collector HTTP exporters work without switching to `http/json`. gRPC is rejected with HTTP 501. Forwarding remains OTLP HTTP/JSON.
 
 ## 0.3.0 — 2026-09-16

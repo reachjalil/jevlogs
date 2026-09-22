@@ -1,5 +1,9 @@
 # Releases
 
+## v0.5.0 — pager, template cache, labeled scores, model budget
+
+See CHANGELOG.md. This also ships the unpublished 0.4.0 paging and template-cache work. Publish with the same steps as below, using `./jevlogs-0.5.0.tgz`.
+
 ## v0.3.0 — forwarding receiver, rules, cache, streaming CLI
 
 See CHANGELOG.md. Publish with the same steps as below, using `./jevlogs-0.3.0.tgz`.
