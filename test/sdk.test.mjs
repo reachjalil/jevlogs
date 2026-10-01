@@ -63,6 +63,11 @@ test('concurrency bounded, shutdown drains and exporter failures propagate',asyn
  const pending=send(exporter,Array.from({length:7},(_,i)=>makeRecord(`record ${i}`)));await exporter.shutdown();await pending;assert.equal(max,2);assert.equal(downstream.batches[0].length,7);
  const failed=new JevLogExporter({exporter:{...target(),export(){throw Error('delivery')}},evaluator:low});assert.equal((await send(failed,[makeRecord()])).code,1);
 });
+test('wrapped exporters without forceFlush, as in OTel SDK Logs 0.200, still flush and shut down',async()=>{
+ const {forceFlush,...downstream}=target();const exporter=new JevLogExporter({exporter:downstream,evaluator:low});
+ assert.equal((await send(exporter,[makeRecord()])).code,0);await exporter.forceFlush();await exporter.shutdown();
+ assert.equal(downstream.batches.length,1);assert.equal(downstream.stopped,true);
+});
 test('savings includes triage overhead, output, negative savings, and validation',()=>{
  const args={logs:1e6,tokensPerLog:300,llmInputPerMillion:2,llmOutputPerMillion:12,outputTokensPerLog:50,retainedFraction:.1};
  const s=estimateSavings(args);assert.equal(s.baseline,1200);assert.equal(s.triage,29.4);assert.equal(s.withJev,149.4);assert.equal(s.savings,1050.6);

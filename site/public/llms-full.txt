@@ -93,11 +93,11 @@ Read the full guide: https://jevlogs.com/guide.md
 
 Jev Logs is a small decision layer before expensive LLM log analysis. Use it from a terminal, in a TypeScript job, or inside your existing Node.js OpenTelemetry Logs pipeline. It assigns diagnostic value, urgency, and an analysis recommendation. Your existing system remains responsible for storing logs, delivering events, and running deeper analysis.
 
-**Current release: 0.5.0, public preview.** The SDK and CLI are on npm. The default demo is offline; live evaluation needs `AI_GATEWAY_API_KEY` and Jev access through Vercel AI Gateway. Production accuracy and savings have not been independently validated for this project.
+**Current release: 0.6.0, public preview.** The SDK and CLI are on npm and install with pnpm or npm. The default demo is offline; live evaluation needs `AI_GATEWAY_API_KEY` and Jev access through Vercel AI Gateway. Production accuracy and savings have not been independently validated for this project.
 
 ## Start a local OpenTelemetry receiver with one config
 
-Requires Node.js 22+. Install `npm install jevlogs`, or use `npx` directly. Add **`jevlogs.config.json` at your project root**:
+Requires Node.js 22+. Install with `pnpm add jevlogs` or `npm install jevlogs`, or run it without installing through `pnpm dlx jevlogs` or `npx jevlogs`. Add **`jevlogs.config.json` at your project root**:
 
 ```json
 {
@@ -150,7 +150,8 @@ POST OTLP HTTP to `/v1/logs` as JSON (`application/json`) or protobuf (`applicat
 With the JavaScript JSON exporter:
 
 ```sh
-npm install @opentelemetry/sdk-logs@0.222.0 @opentelemetry/exporter-logs-otlp-http@0.222.0
+pnpm add @opentelemetry/sdk-logs @opentelemetry/exporter-logs-otlp-http
+# or: npm install @opentelemetry/sdk-logs @opentelemetry/exporter-logs-otlp-http
 ```
 
 ```ts
@@ -322,10 +323,11 @@ For automation, check both the exit code and each decision's `reason`. Redirecti
 
 ## 2. Use the TypeScript API
 
-Requires Node.js 22 or newer.
+Requires Node.js 22 or newer. Neither the SDK nor its types need OpenTelemetry. CommonJS code on Node.js 22.12+ can `require('jevlogs')`.
 
 ```sh
-npm install jevlogs
+pnpm add jevlogs
+# or: npm install jevlogs
 ```
 
 ```ts
@@ -387,8 +389,11 @@ Timeouts, malformed answers, serialization errors, oversized state, redactor fai
 ## 3. Annotate your OpenTelemetry logs
 
 ```sh
-npm install jevlogs @opentelemetry/sdk-logs@0.222.0
+pnpm add jevlogs @opentelemetry/sdk-logs
+# or: npm install jevlogs @opentelemetry/sdk-logs
 ```
+
+`@opentelemetry/sdk-logs` is an optional peer, so install it yourself. Any 0.x release from 0.200 on works. The examples use the current SDK; versions before the `{ exporter }` option take the exporter as the processor's first argument.
 
 ```ts
 import {
@@ -584,7 +589,8 @@ The same math is `scoreDecisions([{ important, selected, line }])`. Recall is nu
 | Receiver answers 503 | Forwarding to `forwardUrl` failed, or more than `maxRequests` batches were in flight. Retry-capable exporters resend the batch. Check `GET /stats`. |
 | A noisy line still reaches the model | Rules match the redacted body text, not the whole JSON record; check the pattern and remember protected records bypass rules. |
 | Numeric logger levels do not protect errors | Pino levels 10–60 are mapped. Other schemes need an OpenTelemetry `severityNumber` or a string `severityText`. |
-| A TypeScript declaration cannot resolve OTel | Install `@opentelemetry/sdk-logs@0.222.0`, which provides the exporter's referenced types. |
+| A TypeScript declaration cannot resolve OTel, or `Cannot find package 'zod'` | Upgrade to jevlogs 0.6.0 or newer. Earlier versions needed the OTel peer for types and relied on auto-installed peers for `zod`. |
+| pnpm warns about an unmet `@opentelemetry/sdk-logs` peer | jevlogs accepts any 0.x release from 0.200 on. Older jevlogs releases pinned 0.222.0 exactly. |
 
 ## What this release does not include
 

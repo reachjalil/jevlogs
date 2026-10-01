@@ -1,77 +1,88 @@
 {
   "name": "jevlogs",
-  "version": "0.5.0",
-  "description": "Confidence-aware log triage with Jev and OpenTelemetry",
-  "type": "module",
-  "license": "MIT",
-  "engines": {
-    "node": ">=22"
-  },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
+  "version": "0.6.0",
+  "description": "Score, page on, and selectively route application logs with Jev, for any OpenTelemetry pipeline",
+  "keywords": [
+    "jev",
+    "logs",
+    "log-triage",
+    "opentelemetry",
+    "otlp",
+    "observability",
+    "llm",
+    "ai-sdk",
+    "cli"
   ],
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./server": {
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js"
-    }
-  },
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "pnpm build && node --test test/*.test.mjs",
-    "prepack": "pnpm build",
-    "site:build": "pnpm --filter jevlogs-site build",
-    "deploy": "pnpm site:build && wrangler deploy",
-    "check:examples": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck examples/telemetry.ts examples/otlp-client.ts examples/pager.ts"
-  },
-  "dependencies": {
-    "ai": "7.0.105"
-  },
-  "peerDependencies": {
-    "@opentelemetry/sdk-logs": "0.222.0"
-  },
-  "devDependencies": {
-    "@opentelemetry/api": "1.9.0",
-    "@opentelemetry/exporter-logs-otlp-http": "0.222.0",
-    "@opentelemetry/sdk-logs": "0.222.0",
-    "@types/node": "22.18.6",
-    "typescript": "5.9.3",
-    "wrangler": "4.129.0"
-  },
-  "packageManager": "pnpm@10.15.1",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/reachjalil/jevlogs.git"
-  },
   "homepage": "https://jevlogs.com",
   "bugs": {
     "url": "https://github.com/reachjalil/jevlogs/issues"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reachjalil/jevlogs.git"
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "jevlogs": "dist/cli.js"
   },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/",
-    "tag": "latest"
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node -e \"process.getBuiltinModule('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "test": "pnpm build && node --test test/*.test.mjs",
+    "check:examples": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck examples/telemetry.ts examples/otlp-client.ts examples/pager.ts",
+    "lint:package": "publint --strict && attw --pack . --profile esm-only",
+    "smoke": "node scripts/smoke.mjs",
+    "release": "node scripts/release.mjs",
+    "prepack": "pnpm build",
+    "site:build": "pnpm --filter jevlogs-site build",
+    "deploy": "pnpm site:build && wrangler deploy"
+  },
+  "dependencies": {
+    "ai": "7.0.105",
+    "zod": "^3.25.76 || ^4.1.8"
+  },
+  "peerDependencies": {
+    "@opentelemetry/sdk-logs": ">=0.200.0 <1"
   },
   "peerDependenciesMeta": {
     "@opentelemetry/sdk-logs": {
       "optional": true
     }
   },
-  "keywords": [
-    "jev",
-    "logs",
-    "opentelemetry",
-    "observability",
-    "cli",
-    "ai-sdk"
-  ]
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@opentelemetry/api": "1.9.0",
+    "@opentelemetry/exporter-logs-otlp-http": "0.222.0",
+    "@opentelemetry/sdk-logs": "0.222.0",
+    "@types/node": "22.18.6",
+    "publint": "0.3.24",
+    "typescript": "5.9.3",
+    "wrangler": "4.129.0"
+  },
+  "packageManager": "pnpm@10.15.1",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }

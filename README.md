@@ -43,7 +43,7 @@ Jev Logs scores each log first: how useful it is, how urgent it is, and whether 
 
 ## Start a local OpenTelemetry receiver with one config
 
-Requires Node.js 22+. Install `npm install jevlogs`, or use `npx` directly. Add **`jevlogs.config.json` at your project root**:
+Requires Node.js 22+. Install with `pnpm add jevlogs` or `npm install jevlogs`, or run it without installing through `pnpm dlx jevlogs` or `npx jevlogs`. Add **`jevlogs.config.json` at your project root**:
 
 ```json
 {
@@ -96,7 +96,8 @@ POST OTLP HTTP to `/v1/logs` as JSON (`application/json`) or protobuf (`applicat
 With the JavaScript JSON exporter:
 
 ```sh
-npm install @opentelemetry/sdk-logs@0.222.0 @opentelemetry/exporter-logs-otlp-http@0.222.0
+pnpm add @opentelemetry/sdk-logs @opentelemetry/exporter-logs-otlp-http
+# or: npm install @opentelemetry/sdk-logs @opentelemetry/exporter-logs-otlp-http
 ```
 
 ```ts
@@ -244,7 +245,8 @@ Live mode sends redacted log bodies to Vercel AI Gateway / TypeSafe and incurs p
 ## Add it to your application
 
 ```sh
-npm install jevlogs
+pnpm add jevlogs
+# or: npm install jevlogs
 ```
 
 ```ts
@@ -287,13 +289,16 @@ npx jevlogs --live --file incidents.jsonl --labels --json
 
 Each record can set `important: true` or `label: "incident"` when a human needed it, and `important: false` or `label: "noise"` when it should be skipped. The summary prints recall and precision. A missed important record exits 2. `scoreDecisions()` is the same calculation in code. `maxModelCalls` caps how many of those lines can reach the model; past the cap, analysis routing keeps the record and the pager holds.
 
-Requires **Node.js 22+** and a server-side `AI_GATEWAY_API_KEY` for live evaluation. The standalone API and CLI do not require OpenTelemetry at runtime. TypeScript projects checking dependency declarations may also need the OTel peer because the package exports its exporter types. Importing the library does not run the CLI.
+Requires **Node.js 22+** and a server-side `AI_GATEWAY_API_KEY` for live evaluation. The standalone API and CLI do not need OpenTelemetry, at runtime or to type-check. Importing the library does not run the CLI. CommonJS code on Node.js 22.12+ can `require('jevlogs')`.
 
 ### Already using OpenTelemetry?
 
 ```sh
-npm install jevlogs @opentelemetry/sdk-logs@0.222.0
+pnpm add jevlogs @opentelemetry/sdk-logs
+# or: npm install jevlogs @opentelemetry/sdk-logs
 ```
+
+`@opentelemetry/sdk-logs` is an optional peer, so pnpm and npm will not install it for you. Any 0.x release from 0.200 on works. The example below uses the current SDK; versions before the `{ exporter }` option take the exporter as the processor's first argument.
 
 Wrap the exporter you already use:
 
@@ -445,7 +450,7 @@ The default redactor transforms the **model-bound copy**, not the original recor
 
 | Component | Status |
 | :--- | :--- |
-| npm library and `npx jevlogs` CLI | 0.5.0 in this repository |
+| npm library and `npx jevlogs` CLI | 0.6.0 |
 | OpenTelemetry Logs integration | Annotation, analysis-branch routing, local OTLP receiver with forwarding |
 | Astro website and guide | [Deployed on Cloudflare](https://jevlogs.workspaceagent.workers.dev) |
 | Automated checks | [Live CI status](https://github.com/reachjalil/jevlogs/actions/workflows/ci.yml) |
@@ -486,10 +491,12 @@ cd jevlogs
 pnpm install --frozen-lockfile
 pnpm test
 pnpm check:examples
+pnpm lint:package   # publint + Are the Types Wrong
+pnpm smoke          # install the packed tarball with pnpm and npm and use it
 pnpm site:build
 ```
 
-For the website, run `pnpm --filter jevlogs-site dev`. To inspect the publishable library, run `pnpm pack`.
+For the website, run `pnpm --filter jevlogs-site dev`. To publish a release, follow the [release guide](https://github.com/reachjalil/jevlogs/blob/main/docs/release.md): `pnpm release --dry-run`, then `pnpm release`.
 
 [Report a bug](https://github.com/reachjalil/jevlogs/issues) · [Release guide](https://github.com/reachjalil/jevlogs/blob/main/docs/release.md) · [Deployment guide](https://github.com/reachjalil/jevlogs/blob/main/docs/deployment.md) · [Design provenance](https://github.com/reachjalil/jevlogs/blob/main/docs/provenance.md)
 

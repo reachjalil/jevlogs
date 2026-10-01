@@ -1,5 +1,5 @@
 // Archive branch + filtered analysis branch + a consumer stub.
-// Run with Node.js 22+, `npm install jevlogs @opentelemetry/sdk-logs@0.222.0`,
+// Run with Node.js 22+, `pnpm add jevlogs @opentelemetry/sdk-logs` (or npm install),
 // and AI_GATEWAY_API_KEY in the environment. Replace the two exporters with yours.
 import {
   LoggerProvider,

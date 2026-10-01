@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import { siteMeta } from '../site';
 
 const repo = 'https://github.com/reachjalil/jevlogs';
 const snippet = `import { JevLogExporter } from 'jevlogs';
@@ -72,7 +73,7 @@ const logs = [
           <code>npx jevlogs</code>
           <span class="npx-copy">copy</span>
         </button>
-        <p class="launch-note">v0.5.0 · MIT · npm install jevlogs</p>
+        <p class="launch-note">v{siteMeta.version} · MIT · pnpm add jevlogs</p>
       </div>
     </div>
     <figure class="hero-art">
@@ -278,7 +279,7 @@ const logs = [
     <div class="code-panel">
       <div class="code-heading"><span>telemetry.ts</span><button type="button" id="copy-code">Copy</button></div>
       <pre><code id="install-code">{snippet}</code></pre>
-      <p class="small code-note">Node.js 22+ · AI SDK 7.0.105 · OTel SDK Logs 0.222.0</p>
+      <p class="small code-note">Node.js 22+ · AI SDK 7.0.105 · OTel SDK Logs 0.200+</p>
     </div>
   </section>
 

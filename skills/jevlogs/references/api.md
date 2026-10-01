@@ -1,4 +1,4 @@
-# jevlogs API reference (verified against jevlogs 0.5.0)
+# jevlogs API reference (verified against jevlogs 0.6.0)
 
 Source of truth: `src/index.ts`, `src/server.ts`, `src/config.ts`, `src/cli.ts` in
 https://github.com/reachjalil/jevlogs. If this file and the code disagree, the code wins.
@@ -7,11 +7,12 @@ https://github.com/reachjalil/jevlogs. If this file and the code disagree, the c
 
 | Import | Exports |
 | --- | --- |
-| `jevlogs` | `createJevLogs`, `createJevPager`, `shouldPage`, `normalizeLogTemplate`, `scoreDecisions`, `JevLogExporter`, `estimateSavings`, `redactCommonSecrets`, `compileRules`, `decisionAttributes`, types `LogInput`, `Decision`, `Evaluation`, `Evaluator`, `PageDecision`, `PageEvaluation`, `PageEvaluator`, `PageOptions`, `PageStats`, `JevOptions`, `JevStats`, `Rule`, `CacheOptions`, `ExporterOptions`, `CostInputs`, `ScoreRow`, `ScoreReport` |
+| `jevlogs` | `createJevLogs`, `createJevPager`, `shouldPage`, `normalizeLogTemplate`, `scoreDecisions`, `JevLogExporter`, `estimateSavings`, `redactCommonSecrets`, `compileRules`, `decisionAttributes`, types `LogInput`, `Decision`, `Evaluation`, `Evaluator`, `PageDecision`, `PageEvaluation`, `PageEvaluator`, `PageOptions`, `PageStats`, `JevOptions`, `JevStats`, `Rule`, `CacheOptions`, `ExporterOptions`, `CostInputs`, `ScoreRow`, `ScoreReport`, `LogRecordLike`, `LogRecordExporterLike`, `ExportResultLike` |
 | `jevlogs/server` | `startJevLogsServer`, `loadJevConfig`, types `JevServerOptions`, `JevLogEvent`, `JevConfig` |
-| `npx jevlogs` | CLI (`dist/cli.js`) |
+| `jevlogs/package.json` | the package manifest |
+| `npx jevlogs` / `pnpm dlx jevlogs` | CLI (`dist/cli.js`) |
 
-Runtime: Node.js 22 or newer, ESM. Dependency: `ai@7.0.105` (Vercel AI SDK). Optional peer: `@opentelemetry/sdk-logs@0.222.0`, needed at runtime only for `JevLogExporter`, but TypeScript consumers may need it installed for the exported declarations to resolve.
+Runtime: Node.js 22 or newer, ESM; CommonJS can `require('jevlogs')` on Node.js 22.12+. Dependencies: `ai@7.0.105` (Vercel AI SDK) and `zod`, the peer `ai` needs. Optional peer: `@opentelemetry/sdk-logs` `>=0.200.0 <1`, used only by `JevLogExporter`. The declarations do not import it, so TypeScript projects without OpenTelemetry type-check with `skipLibCheck` off.
 
 There is no `analyze()`, no `explain()`, no retry helper, no downstream LLM client, no Collector plugin, no gRPC receiver. The decision cache is inside `createJevLogs` / `createJevPager`; it is not a separate export.
 
@@ -58,6 +59,8 @@ interface Decision {
 The `unavailable` fallback is `{ value: 100, priority: 'high', route: 'analyze', actionableProbability: null, reason: 'unavailable' }`. Provider error details are not exposed. There are no automatic retries (`maxRetries: 0` is passed to the AI SDK). Failures are never cached.
 
 0.3.0 additions: `createJevLogs({ rules, cache })`, `jev.stats()`, `JevLogExporter#stats()`, `startJevLogsServer({ forwardUrl, forwardMode, forwardHeaders, forwardTimeoutMs, concurrency, maxRequests })` with `onLog` optional when forwarding, `GET /stats`, `parseOtlpHeaders()`, `compileRules()`, `decisionAttributes()`, and the CLI flag `--follow` for streaming stdin. Config keys `forwardUrl`, `forwardMode`, `rules`, `cacheSize`, `cacheTtlMs`, `normalizeTemplates`.
+
+0.6.0 changes: `LogRecordLike`, `LogRecordExporterLike`, and `ExportResultLike` replace the `@opentelemetry/sdk-logs` type imports; `zod` became a dependency; the OTel peer range is `>=0.200.0 <1`; `jevlogs/package.json` is exported; the package ships declaration and source maps. 0.4.0 and 0.5.0 were never published to npm on their own, so npm users go from 0.3.0 to 0.6.0.
 
 ### What the default evaluator sends
 
@@ -108,13 +111,13 @@ Replaces `Bearer <token>`, the value after `password|api_key|api-key|apikey|toke
 
 ```ts
 interface ExporterOptions extends JevOptions {
-  exporter: LogRecordExporter;         // the user's real exporter; wrapped, never mutated
+  exporter: LogRecordExporterLike;     // any OTel LogRecordExporter; wrapped, never mutated
   mode?: 'annotate' | 'analysis-only'; // default 'annotate'
   concurrency?: number;                // default 4; integer 1–32
 }
 ```
 
-Implements `LogRecordExporter` (`export`, `forceFlush`, `shutdown`). Put it inside `BatchLogRecordProcessor`. Per record it calls `triage` with `body`, `severityNumber`, `severityText`, `protected = attributes['jev.protected'] === true`, and `service` from resource attribute `service.name` when that value is a string. It then forwards a **new** record object that copies body, severity, `hrTime`, `hrTimeObserved`, `spanContext`, `eventName`, `resource`, `instrumentationScope`, `droppedAttributesCount`, and attributes plus:
+Satisfies OpenTelemetry's `LogRecordExporter` (`export`, `forceFlush`, `shutdown`) through the structural type `LogRecordExporterLike`. `forceFlush` reaches the wrapped exporter only when it has one; 0.200-era exporters do not. Put it inside `BatchLogRecordProcessor`. Per record it calls `triage` with `body`, `severityNumber`, `severityText`, `protected = attributes['jev.protected'] === true`, and `service` from resource attribute `service.name` when that value is a string. It then forwards a **new** record object that copies body, severity, `hrTime`, `hrTimeObserved`, `spanContext`, `eventName`, `resource`, `instrumentationScope`, `droppedAttributesCount`, and attributes plus:
 
 | attribute | value |
 | --- | --- |

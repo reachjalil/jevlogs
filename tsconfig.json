@@ -8,7 +8,9 @@
     "outDir": "dist",
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
-    "rootDir": "src"
+    "rootDir": "src",
+    "declarationMap": true,
+    "sourceMap": true
   },
   "include": [
     "src/**/*.ts"

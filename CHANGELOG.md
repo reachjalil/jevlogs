@@ -1,6 +1,42 @@
 # Changelog
 
+## 0.6.0 — 2026-09-30
+
+First npm release since 0.3.0, with clean pnpm and TypeScript installs.
+
+It ships the 0.4.0 pager and template cache and the 0.5.0 labeled scores and model budget, and fixes three problems that stopped the package from installing, type-checking, or shutting down cleanly.
+
+### Fixed
+
+- **`zod` is now provided.** `ai` needs `zod` as a peer and jevlogs did not supply it. Where peers are not auto-installed, such as pnpm with `auto-install-peers=false`, every command failed with `ERR_MODULE_NOT_FOUND: Cannot find package 'zod'`, and pnpm 12 refused the install. `zod` is now a dependency with the range `ai` accepts.
+- **TypeScript without OpenTelemetry.** The declarations imported `@opentelemetry/sdk-logs`, an optional peer, so projects without it failed `tsc` with TS2307 unless `skipLibCheck` was on. The exporter now uses structural types, `LogRecordLike`, `LogRecordExporterLike`, and `ExportResultLike`, which real OpenTelemetry records and exporters satisfy. Existing exporter code compiles unchanged.
+- **Exporter shutdown on older OpenTelemetry.** `JevLogExporter` always called `forceFlush()` on the wrapped exporter. Exporters from `@opentelemetry/sdk-logs` 0.200 have none, so `forceFlush()` and `shutdown()` threw `TypeError`. It is now called only when present.
+
+### Changed
+
+- **OpenTelemetry peer range.** `@opentelemetry/sdk-logs` is accepted from `>=0.200.0 <1` instead of exactly 0.222.0, so pnpm stops warning on other versions. The exporter is tested on 0.200.0 and 0.222.0. Older SDKs take the exporter as the first processor argument instead of `{ exporter }`.
+- **Package entry points.** `exports` adds a `default` condition and `./package.json`. CommonJS code on Node.js 22.12 or newer can `require('jevlogs')`, and tools that read `jevlogs/package.json` no longer get `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+- **Go to definition opens the source.** The package ships declaration maps, source maps, `src/`, and this changelog.
+
+### Upgrading from npm 0.3.0
+
+Everything under 0.4.0 and 0.5.0 below is new on npm. Check these before you upgrade:
+
+- `Decision.reason` can be `'budget'` when `maxModelCalls` is set. An exhaustive `switch` over `reason` needs that case.
+- The decision cache keys on normalized templates, so lines that differ only in UUIDs, IPs, timestamps, paths, or hex ids share one decision. Set `normalizeTemplates: false` to cache exact inputs as 0.3.0 did.
+- `service` on `triage()`, and resource `service.name` in the exporter and receiver, is sent to the model with the redacted body. Other attributes stay local.
+- The CLI maps Pino levels 10–60 to OpenTelemetry severity, so numeric level 50 and 60 lines are protected on the analysis path and skip the model.
+
+### Release tooling
+
+- `pnpm smoke` installs the packed tarball with pnpm (strict peers, no auto-install) and npm, type-checks it with TypeScript 5.9 and 7.0 under `nodenext` and `bundler` with `skipLibCheck` off, and runs the CLI, the receiver, `require()`, and the exporter on OpenTelemetry 0.200.0 and 0.222.0.
+- `pnpm lint:package` runs publint and Are the Types Wrong.
+- `pnpm release` publishes the tarball that passed those checks, then tags, pushes, and creates the GitHub release. `pnpm release --dry-run` changes nothing.
+- CI tests Node.js 22, 24, and 26 and runs the package lint and smoke test.
+
 ## 0.5.0 — 2026-09-21
+
+_Tagged on GitHub; first published to npm in 0.6.0._
 
 Measure a filter before trusting it, and keep a page from repeating.
 
@@ -9,6 +45,8 @@ Measure a filter before trusting it, and keep a page from repeating.
 - **Model-call budget.** `maxModelCalls` stops further model invocations. Analysis routing fails open (`reason: "budget"`, route `analyze`). The pager holds. Rules, cache hits, and local severity bypasses do not spend the budget.
 
 ## 0.4.0 — 2026-09-21
+
+_Not published separately; first on npm in 0.6.0._
 
 Paging, template caching, and cheaper repeat traffic. Analysis routing is unchanged: a record is retained only when it is confidently low-value.
 

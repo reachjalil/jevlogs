@@ -1,6 +1,5 @@
 import { experimental_evaluate as evaluate } from 'ai';
 import { createHash } from 'node:crypto';
-import type { LogRecordExporter, ReadableLogRecord } from '@opentelemetry/sdk-logs';
 
 export interface LogInput {
   body: unknown;
@@ -396,8 +395,33 @@ export function createJevPager(options: PageOptions = {}) {
   };
 }
 
+// Structural subsets of @opentelemetry/sdk-logs types. The OTel SDK is an optional peer, so the
+// published declarations must not import it: projects without it would fail to type-check.
+// Real ReadableLogRecord, LogRecordExporter, and ExportResult values are assignable to these.
+/** Fields of an OpenTelemetry `ReadableLogRecord` that the exporter reads and forwards. */
+export interface LogRecordLike {
+  readonly hrTime: unknown;
+  readonly hrTimeObserved: unknown;
+  readonly spanContext?: unknown;
+  readonly severityText?: string;
+  readonly severityNumber?: number;
+  readonly body?: unknown;
+  readonly eventName?: string;
+  readonly resource: { readonly attributes: Readonly<Record<string, unknown>> };
+  readonly instrumentationScope: unknown;
+  readonly attributes: Readonly<Record<string, unknown>>;
+  readonly droppedAttributesCount: number;
+}
+/** OpenTelemetry `ExportResult`: code 0 is success, 1 is failure. */
+export interface ExportResultLike { code: number; error?: Error }
+/** Any OpenTelemetry `LogRecordExporter`, such as the OTLP, console, or in-memory exporters. */
+export interface LogRecordExporterLike {
+  export(records: LogRecordLike[], resultCallback: (result: ExportResultLike) => void): void;
+  shutdown(): Promise<void>;
+  forceFlush?(): Promise<void>;
+}
 export interface ExporterOptions extends JevOptions {
-  exporter: LogRecordExporter;
+  exporter: LogRecordExporterLike;
   /** annotate preserves every record. analysis-only is ONLY for a separate LLM branch. */
   mode?: 'annotate' | 'analysis-only';
   concurrency?: number;
@@ -412,7 +436,7 @@ export function decisionAttributes(decision: Decision): Record<string, string | 
   };
 }
 /** Wrap an existing exporter in BatchLogRecordProcessor. Originals are never mutated. */
-export class JevLogExporter implements LogRecordExporter {
+export class JevLogExporter implements LogRecordExporterLike {
   private readonly jev;
   private readonly concurrency: number;
   private readonly pending = new Set<Promise<void>>();
@@ -426,7 +450,7 @@ export class JevLogExporter implements LogRecordExporter {
   }
   /** Triage counters for this exporter instance. */
   stats() { return this.jev.stats(); }
-  export(records: ReadableLogRecord[], callback: Parameters<LogRecordExporter['export']>[1]): void {
+  export(records: LogRecordLike[], callback: Parameters<LogRecordExporterLike['export']>[1]): void {
     if (this.closed) { callback({ code: 1, error: new Error('Exporter shut down') }); return; }
     // BatchLogRecordProcessor serializes exports. Refuse overlapping classification work
     // by forwarding it unchanged: this also bounds direct callers without losing records.
@@ -434,7 +458,7 @@ export class JevLogExporter implements LogRecordExporter {
     this.pending.add(task);
     void task.finally(() => this.pending.delete(task));
   }
-  private forward(records: ReadableLogRecord[], callback: Parameters<LogRecordExporter['export']>[1]): Promise<void> {
+  private forward(records: LogRecordLike[], callback: Parameters<LogRecordExporterLike['export']>[1]): Promise<void> {
     return new Promise(resolve => {
       let done = false;
       const finish: typeof callback = result => { if (!done) { done = true; try { callback(result); } finally { resolve(); } } };
@@ -442,9 +466,9 @@ export class JevLogExporter implements LogRecordExporter {
       catch (error) { finish({ code: 1, error: error instanceof Error ? error : new Error('Export failed') }); }
     });
   }
-  private async run(records: ReadableLogRecord[], callback: Parameters<LogRecordExporter['export']>[1]): Promise<void> {
+  private async run(records: LogRecordLike[], callback: Parameters<LogRecordExporterLike['export']>[1]): Promise<void> {
     this.classifying = true;
-    const output: (ReadableLogRecord | undefined)[] = new Array(records.length);
+    const output: (LogRecordLike | undefined)[] = new Array(records.length);
     let cursor = 0;
     await Promise.all(Array.from({ length: Math.min(this.concurrency, records.length) }, async () => {
       while (cursor < records.length) {
@@ -462,11 +486,11 @@ export class JevLogExporter implements LogRecordExporter {
       }
     }));
     this.classifying = false;
-    const selected = output.filter((r): r is ReadableLogRecord => r !== undefined);
+    const selected = output.filter((r): r is LogRecordLike => r !== undefined);
     if (!selected.length) { callback({ code: 0 }); return; }
     await this.forward(selected, callback);
   }
-  async forceFlush(): Promise<void> { await Promise.all([...this.pending]); await this.options.exporter.forceFlush(); }
+  async forceFlush(): Promise<void> { await Promise.all([...this.pending]); await this.options.exporter.forceFlush?.(); }
   shutdown(): Promise<void> {
     this.closed = true;
     return this.shutdownTask ??= (async () => { await this.forceFlush(); await this.options.exporter.shutdown(); })();
