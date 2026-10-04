@@ -87,14 +87,23 @@ test('upstream failure returns retryable 503 without invoking onLog; upstream pa
  }finally{await receiver.close();await collector.close();}
 });
 test('parallel requests share bounded evaluation slots; maxRequests still yields 503',async()=>{
- let active=0,max=0;const slow=async()=>{active++;max=Math.max(max,active);await new Promise(r=>setTimeout(r,15));active--;return evaluator();};
- const receiver=await startJevLogsServer({port:0,evaluator:slow,concurrency:2,maxRequests:2,onLog:()=>{}});
+ let release;const gate=new Promise(r=>release=r);
+ let active=0,max=0;const slow=async()=>{active++;max=Math.max(max,active);await gate;active--;return evaluator();};
+ const receiver=await startJevLogsServer({port:0,evaluator:slow,timeoutMs:30_000,concurrency:2,maxRequests:2,onLog:()=>{}});
  let n=0;const post=()=>fetch(receiver.url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({resourceLogs:[{scopeLogs:[{logRecords:[{body:{stringValue:`a${n++}`}},{body:{stringValue:`b${n++}`}}]}]}]})});
+ const accepted=[post(),post()];
  try{
-  const results=await Promise.all([post(),post(),post()]);
+  // Keep both requests open until the receiver has admitted them and filled its evaluation slots.
+  await new Promise((resolve,reject)=>{
+   let poll;const timer=setTimeout(()=>{clearTimeout(poll);reject(Error('requests did not enter the receiver'));},15_000);
+   const check=()=>{if(receiver.stats().requests===2&&active===2){clearTimeout(timer);resolve();}else poll=setTimeout(check,10);};check();
+  });
+  const busy=await post();assert.equal(busy.status,503);assert.equal(busy.headers.get('retry-after'),'1');
+  release();
+  const results=[...await Promise.all(accepted),busy];
   const statuses=results.map(r=>r.status).sort();assert.deepEqual(statuses,[200,200,503]);assert.equal(max,2);
   assert.equal(receiver.stats().busy,1);
- }finally{await receiver.close();}
+ }finally{release();await Promise.allSettled(accepted);await receiver.close();}
  await assert.rejects(startJevLogsServer({port:0,evaluator}),/onLog, forwardUrl/);
  await assert.rejects(startJevLogsServer({port:0,evaluator,forwardUrl:'ftp://x'}),/http/);
 });

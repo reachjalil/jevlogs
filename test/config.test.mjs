@@ -13,14 +13,21 @@ test('root config loads relative envFile and starts CLI receiver',async()=>{
   const env={...process.env};delete env.AI_GATEWAY_API_KEY;
   child=spawn(process.execPath,[resolve('dist/cli.js'),'--live'],{cwd:dir,env});
   const endpoint=await new Promise((resolve,reject)=>{
-   const timer=setTimeout(()=>reject(Error('startup timeout')),5000);let output='';
+   const timer=setTimeout(()=>reject(Error('startup timeout')),30_000);let output='';
    child.stderr.on('data',chunk=>{output+=chunk;const match=output.match(/http:\/\/127\.0\.0\.1:\d+\/v1\/logs/);if(match){clearTimeout(timer);resolve(match[0]);}});
    child.once('exit',code=>{clearTimeout(timer);reject(Error(`early exit ${code}: ${output}`));});
   });
   const rows=[];child.stdout.on('data',chunk=>rows.push(chunk.toString()));
   const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({resourceLogs:[{scopeLogs:[{logRecords:[{body:{stringValue:'never sent to model'},severityNumber:17}]}]}]})});
-  assert.equal(r.status,200);await new Promise(r=>setTimeout(r,20));assert.match(rows.join(''),/protected/);assert.doesNotMatch(rows.join(''),/synthetic-test-key|never sent/);
- }finally{if(child){const exited=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await exited;}await rm(dir,{recursive:true,force:true});}
+  assert.equal(r.status,200);
+  await new Promise((resolve,reject)=>{
+   if(rows.join('').includes('protected'))return resolve();
+   const timer=setTimeout(()=>{child.stdout.off('data',check);reject(Error('log output timeout'));},30_000);
+   const check=()=>{if(rows.join('').includes('protected')){clearTimeout(timer);child.stdout.off('data',check);resolve();}};
+   child.stdout.on('data',check);
+  });
+  assert.match(rows.join(''),/protected/);assert.doesNotMatch(rows.join(''),/synthetic-test-key|never sent/);
+ }finally{if(child&&child.exitCode===null&&child.signalCode===null){const exited=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await exited;}await rm(dir,{recursive:true,force:true});}
 });
 test('config rejects unknown and incorrectly typed settings',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'jev-config-'));const path=join(dir,'config.json');
